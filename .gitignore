@@ -12,4 +12,4 @@ samples/
 *.db
 *.db-wal
 *.db-shm
-.claude/settings.local.json
+.claude/settings.local.json*

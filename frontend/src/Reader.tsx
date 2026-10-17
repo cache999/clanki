@@ -13,6 +13,13 @@ const viewerLib = import("pdfjs-dist/web/pdf_viewer.mjs");
 
 export type ReaderSelection = { page: number; text: string; rects: number[][] };
 
+/** The page's padding box in client coordinates. pdf.js pages have a border, and the
+ * highlight layer (like the text layer) is positioned inside it. */
+function pageBox(div: HTMLElement) {
+  const r = div.getBoundingClientRect();
+  return { left: r.left + div.clientLeft, top: r.top + div.clientTop, width: div.clientWidth, height: div.clientHeight };
+}
+
 export type ReaderHandle = {
   prevPage(): void;
   nextPage(): void;
@@ -118,7 +125,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
       const pageDiv = (e.target as HTMLElement).closest(".page") as HTMLElement | null;
       if (!pageDiv) return;
       const pageNumber = Number(pageDiv.dataset.pageNumber);
-      const box = pageDiv.getBoundingClientRect();
+      const box = pageBox(pageDiv);
       const x = (e.clientX - box.left) / box.width;
       const y = (e.clientY - box.top) / box.height;
       const hit = props.sources.find((s) => s.page === pageNumber && hitTest(s.rects, x, y));
@@ -134,7 +141,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     props.onSelection({
       page: Number(pageDiv.dataset.pageNumber),
       text,
-      rects: normaliseRects([...range.getClientRects()], pageDiv.getBoundingClientRect()),
+      rects: normaliseRects([...range.getClientRects()], pageBox(pageDiv)),
     });
   }
 
@@ -162,7 +169,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
       const div: HTMLElement | undefined = s && viewerRef.current?.getPageView(s.page - 1)?.div;
       if (!s || !c || !div) return;
       const y = s.rects.length ? s.rects[0][1] : 0;
-      c.scrollTo({ top: div.offsetTop + y * div.clientHeight - c.clientHeight / 3, behavior: "smooth" });
+      c.scrollTo({ top: div.offsetTop + div.clientTop + y * div.clientHeight - c.clientHeight / 3, behavior: "smooth" });
     },
     clearSelection() {
       window.getSelection()?.removeAllRanges();

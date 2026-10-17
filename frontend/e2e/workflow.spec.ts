@@ -41,6 +41,15 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await expect(rho).toContainText("p.1");
   await expect(rho.locator(".status")).toHaveText("new");
   await expect(page.locator(".clanki-hl .hl.has-cards")).toHaveCount(1);
+  // the highlight sits on the text it was made from (it is the selection's line box, which can be a
+  // little taller than the text span, so compare centres and edges rather than exact boxes)
+  const span = (await page.locator(".textLayer span", { hasText: "Rhodopsin absorbs" }).first().boundingBox())!;
+  const hl = (await page.locator(".clanki-hl .hl.has-cards").boundingBox())!;
+  expect(Math.abs(hl.x - span.x)).toBeLessThan(2);
+  expect(Math.abs(hl.x + hl.width - (span.x + span.width))).toBeLessThan(2);
+  expect(Math.abs(hl.y + hl.height / 2 - (span.y + span.height / 2))).toBeLessThan(2);
+  expect(hl.y).toBeLessThanOrEqual(span.y + 1);
+  expect(hl.y + hl.height).toBeGreaterThanOrEqual(span.y + span.height - 1);
 
   // R: reverse card asks for the reverse prompt
   await page.keyboard.press("r");
