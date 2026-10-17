@@ -1,0 +1,11 @@
+#separator:tab
+#html:true
+#guid column:1
+#notetype column:2
+#deck column:3
+#tags column:4
+#columns:GUID	Note type	Deck	Tags	F1	F2	F3	F4	F5	F6	F7	F8	F9	F10	F11	F12	F13	F14	F15	F16	F17	F18	F19	F20	F21	F22	F23	F24	F25	F26	F27
+clankiT3a01	Cloze (overlapping)	clanki-test::3-clanki	clanki-test clanki-test::lists	CLANKI TEST 3 - noble gases (increasing atomic number)	He<br>Ne<br>Ar<br>Kr<br>Xe	He Never Arrives Kraving Xenon	Test 3: ordered, 5 items, whole-list card on.	clanki import test	1,1,0 | n,n,n,n	<div>{{c1::He}}</div><div>...</div><div>...</div><div>...</div><div>...</div>	<div>He</div><div>{{c2::Ne}}</div><div>...</div><div>...</div><div>...</div>	<div>...</div><div>Ne</div><div>{{c3::Ar}}</div><div>...</div><div>...</div>	<div>...</div><div>...</div><div>Ar</div><div>{{c4::Kr}}</div><div>...</div>	<div>...</div><div>...</div><div>...</div><div>Kr</div><div>{{c5::Xe}}</div>																<div>{{c21::He}}</div><div>{{c21::Ne}}</div><div>{{c21::Ar}}</div><div>{{c21::Kr}}</div><div>{{c21::Xe}}</div>
+clankiT3b02	Cloze (overlapping)	clanki-test::3-clanki	clanki-test clanki-test::lists	CLANKI TEST 3 - RGB+K print/screen colours (set; order: RGB then K)	<ul><li>Red</li><li>Green</li><li>Blue</li><li>Black</li></ul>		Test 3: set with imposed order, whole-list card off.		1,1,0 | n,n,n,y	<ul><li>{{c1::Red}}</li><li>...</li><li>...</li><li>...</li></ul>	<ul><li>Red</li><li>{{c2::Green}}</li><li>...</li><li>...</li></ul>	<ul><li>...</li><li>Green</li><li>{{c3::Blue}}</li><li>...</li></ul>	<ul><li>...</li><li>...</li><li>Blue</li><li>{{c4::Black}}</li></ul>																	
+clankiT3c03	Basic (optional reversed card)	clanki-test::3-clanki	clanki-test clanki-test::basic	CLANKI TEST 3 - capital of France	Paris	y	Test 3: reverse card on; Why should show on BOTH answer sides.																							
+clankiT3d04	Basic (optional reversed card)	clanki-test::3-clanki	clanki-test clanki-test::basic	CLANKI TEST 3 - water boiling point at 1 atm (value + unit)	100 °C		Boiling occurs when vapour pressure equals ambient pressure (101.3 kPa).																							

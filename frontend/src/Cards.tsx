@@ -1,0 +1,285 @@
+// Cards pane: the document's cards in reading order, each viewable and editable inline.
+import { useEffect, useRef, useState } from "react";
+import type { Note, NoteDraft } from "./api";
+import { parseTags, richHtml } from "./text";
+
+export type EditTarget = { id: string; focus?: string; preset?: Partial<Note> };
+
+type Props = {
+  notes: Note[];
+  pages: Map<string, number>; // source id -> page
+  selectedId: string | null;
+  editing: EditTarget | null;
+  draft: NoteDraft | null;
+  sendErrors: Record<string, string>;
+  onSelect(id: string): void;
+  onEdit(t: EditTarget): void;
+  onCancel(): void;
+  onSave(id: string, fields: Partial<Note>): void;
+  onCreate(fields: NoteDraft): void;
+  onShowSource(sourceId: string): void;
+};
+
+export function Cards(p: Props) {
+  const selectedRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // braces matter: newer Chromium returns a Promise here, which React would call as cleanup
+    selectedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [p.selectedId, p.editing]);
+
+  const counts = {
+    new: p.notes.filter((n) => n.status === "new").length,
+    edited: p.notes.filter((n) => n.status === "edited").length,
+    issues: p.notes.filter((n) => n.issues.length).length,
+  };
+  return (
+    <aside className="cards">
+      <div className="cards-bar">
+        <b>{p.notes.length} cards</b>
+        <span className="muted">
+          {counts.new} new · {counts.edited} edited{counts.issues ? ` · ⚠ ${counts.issues}` : ""}
+        </span>
+      </div>
+      {p.draft && (
+        <div className="card selected" ref={selectedRef}>
+          <Editor
+            note={p.draft}
+            focus={p.editing?.id === "draft" ? p.editing.focus : undefined}
+            onSave={(f) => p.onCreate({ ...p.draft!, ...f })}
+            onCancel={p.onCancel}
+          />
+        </div>
+      )}
+      {p.notes.map((n) => {
+        const selected = n.id === p.selectedId;
+        const editing = p.editing?.id === n.id;
+        const page = n.source_id ? p.pages.get(n.source_id) : undefined;
+        return (
+          <div
+            key={n.id}
+            ref={selected ? selectedRef : undefined}
+            className={`card ${selected ? "selected" : ""} st-${n.status}`}
+            onClick={() => p.onSelect(n.id)}
+            onDoubleClick={() => p.onEdit({ id: n.id })}
+          >
+            <div className="card-meta">
+              <span className="kind">{n.type === "qa" ? (n.add_reverse ? "Q/A ⇄" : "Q/A") : `List · ${n.items.length}`}</span>
+              <span className={`status st-${n.status}`}>{n.status}</span>
+              {page !== undefined && (
+                <button
+                  className="chip"
+                  title="Show the highlighted source"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    p.onShowSource(n.source_id!);
+                  }}
+                >
+                  p.{page}
+                </button>
+              )}
+            </div>
+            {editing ? (
+              <Editor
+                note={{ ...n, ...p.editing!.preset }}
+                focus={p.editing!.focus}
+                onSave={(f) => p.onSave(n.id, f)}
+                onCancel={p.onCancel}
+              />
+            ) : (
+              <View note={n} />
+            )}
+            {!editing && n.issues.length > 0 && (
+              <ul className="issues">
+                {n.issues.map((i) => (
+                  <li key={i.code} className={i.level}>
+                    {i.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {p.sendErrors[n.id] && <div className="send-error">Anki: {p.sendErrors[n.id]}</div>}
+          </div>
+        );
+      })}
+      {!p.notes.length && !p.draft && (
+        <p className="empty muted">
+          No cards yet. Select text in the document and press <kbd>N</kbd> (card) or <kbd>L</kbd> (list), or press{" "}
+          <kbd>N</kbd> for a blank card.
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function Html({ s, className }: { s: string; className?: string }) {
+  return <div className={className} dangerouslySetInnerHTML={{ __html: richHtml(s) }} />;
+}
+
+function View({ note: n }: { note: Note }) {
+  if (n.type === "list")
+    return (
+      <>
+        <Html className="front" s={n.title || "(no title)"} />
+        <ol className="items">
+          {n.items.map((it, i) => (
+            <li key={i}>{it}</li>
+          ))}
+        </ol>
+        {n.why && <Html className="why" s={n.why} />}
+        {n.mnemonic && <Html className="why" s={"Mnemonic: " + n.mnemonic} />}
+      </>
+    );
+  return (
+    <>
+      <Html className="front" s={n.front || "(no front)"} />
+      <div className="back">
+        <Html s={n.back || "(no back)"} />
+        {n.add_reverse && n.reverse_prompt && <span className="rprompt">(r: {n.reverse_prompt})</span>}
+      </div>
+      {n.why && <Html className="why" s={n.why} />}
+      {n.tags.length > 0 && <div className="tags">{n.tags.join(" ")}</div>}
+    </>
+  );
+}
+
+type Fields = Pick<
+  Note,
+  "front" | "back" | "add_reverse" | "reverse_prompt" | "why" | "title" | "full" | "mnemonic"
+> & { items: string; tags: string };
+
+function Editor({
+  note,
+  focus,
+  onSave,
+  onCancel,
+}: {
+  note: NoteDraft;
+  focus?: string;
+  onSave(f: Partial<Note>): void;
+  onCancel(): void;
+}) {
+  const [f, setF] = useState<Fields>({
+    front: note.front ?? "",
+    back: note.back ?? "",
+    add_reverse: note.add_reverse ?? false,
+    reverse_prompt: note.reverse_prompt ?? "",
+    why: note.why ?? "",
+    title: note.title ?? "",
+    full: note.full ?? true,
+    mnemonic: note.mnemonic ?? "",
+    items: (note.items ?? []).join("\n"),
+    tags: (note.tags ?? []).join(" "),
+  });
+  const root = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const name = focus ?? (note.type === "qa" ? "front" : "title");
+    const el = root.current?.querySelector<HTMLElement>(`[name="${name}"]`);
+    el?.focus();
+  }, []);
+
+  const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setF({ ...f, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value });
+
+  function save() {
+    const tags = parseTags(f.tags);
+    if (note.type === "qa")
+      onSave({ front: f.front, back: f.back, add_reverse: f.add_reverse, reverse_prompt: f.reverse_prompt, why: f.why, tags });
+    else
+      onSave({
+        title: f.title,
+        items: f.items.split("\n").map((s) => s.trim()).filter(Boolean),
+        full: f.full,
+        why: f.why,
+        mnemonic: f.mnemonic,
+        tags,
+      });
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      save();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel();
+    }
+    e.stopPropagation();
+  }
+
+  return (
+    <form
+      ref={root}
+      className="editor"
+      onKeyDown={onKeyDown}
+      onClick={(e) => e.stopPropagation()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
+      {note.type === "qa" ? (
+        <>
+          <label>
+            Front
+            <textarea name="front" rows={2} value={f.front} onChange={set("front")} placeholder="Sacubitril (MoA, use) [2]" />
+          </label>
+          <label>
+            Back
+            <textarea name="back" rows={2} value={f.back} onChange={set("back")} />
+          </label>
+          <label className="inline">
+            <input name="add_reverse" type="checkbox" checked={f.add_reverse} onChange={set("add_reverse")} /> Reverse card
+          </label>
+          {f.add_reverse && (
+            <label>
+              Reverse prompt <span className="muted">(added to Back as “(r: …)”)</span>
+              <input
+                name="reverse_prompt"
+                value={f.reverse_prompt}
+                onChange={set("reverse_prompt")}
+                placeholder="what country has this capital?"
+              />
+            </label>
+          )}
+          <label>
+            Why
+            <textarea name="why" rows={2} value={f.why} onChange={set("why")} />
+          </label>
+        </>
+      ) : (
+        <>
+          <label>
+            Title <span className="muted">(the prompt; say what the list is and its order)</span>
+            <input name="title" value={f.title} onChange={set("title")} />
+          </label>
+          <label>
+            Items <span className="muted">(one per line)</span>
+            <textarea name="items" rows={Math.max(3, f.items.split("\n").length)} value={f.items} onChange={set("items")} />
+          </label>
+          <label className="inline">
+            <input name="full" type="checkbox" checked={f.full} onChange={set("full")} /> Whole-list card
+          </label>
+          <label>
+            Remarks
+            <textarea name="why" rows={2} value={f.why} onChange={set("why")} />
+          </label>
+          <label>
+            Mnemonic
+            <input name="mnemonic" value={f.mnemonic} onChange={set("mnemonic")} />
+          </label>
+        </>
+      )}
+      <label>
+        Tags <span className="muted">(added to the document’s tags)</span>
+        <input name="tags" value={f.tags} onChange={set("tags")} />
+      </label>
+      <div className="editor-actions">
+        <button type="submit">Save</button> <span className="muted">Ctrl+Enter</span>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>{" "}
+        <span className="muted">Esc</span>
+      </div>
+    </form>
+  );
+}

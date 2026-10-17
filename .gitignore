@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/test-results/
+frontend/playwright-report/
+# src/clanki/static/ (the built UI) is committed so PCs without Node can run clanki;
+# rebuild with `npm run build` in frontend/ before committing UI changes.
+# lecture material is copyrighted: never commit it
+samples/
+*.db
+*.db-wal
+*.db-shm
+.claude/settings.local.json

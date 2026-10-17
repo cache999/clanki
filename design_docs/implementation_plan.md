@@ -1,0 +1,251 @@
+# clanki: implementation plan
+
+Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_skill.md`. Milestone 0 is done: all import tests passed and the Why field has been added.
+
+## Decisions
+
+| Topic | Decision |
+|---|---|
+| Where it runs | Locally on each Windows PC that has Anki. Python server on `127.0.0.1`, UI in the browser. No hosting, no login. Developed in WSL, but code must run natively on Windows: `pathlib` only, nothing POSIX-only, no hard-coded paths. |
+| Sources (v1) | PDFs with a text layer. PPTX/DOCX converted to PDF with LibreOffice (`soffice --headless --convert-to pdf`); when LibreOffice is missing, ask the user to "Save as PDF" from Office. |
+| Sources (later) | Screenshots, a dragged region of a page, or scanned PDFs, OCR'd by a vision model. Web pages by URL. |
+| Anki delivery | AnkiConnect is primary: send, update, read note types, duplicate checks, facet vocabulary. A `.txt` export is the fallback. |
+| Basic explanations | 4th field `Why` on `Basic (optional reversed card)` (added), shown on both answer sides. |
+| Reverse cards | When Add Reverse is on, the Back must also carry a prompt that recovers the Front, written into the Back text: `Paris<br>(r: what country has this capital?)`. Stored as its own field in clanki and joined into Back on send/export. |
+| LLM | Provider abstraction with Claude (Anthropic API key) and DeepSeek. Pick the default after a side-by-side test (milestone 3). |
+
+## Your Anki setup (read from the collection, read-only)
+
+- **`Basic (optional reversed card)`**: Front, Back, Add Reverse, Why. 15,255 notes; Add Reverse is set on 724 of them. Card 2 (reverse) shows Back as its prompt, which is why reversed Backs need the `(r: …)` prompt.
+- **`Cloze (overlapping)`**: Title, Original, Mnemonic, Remarks, Sources, Settings, Text1–Text20, Full (27 fields). Title comes first, but the builder in `claude_skill.md` assumed Original first. Its output would have filled the wrong fields on every list note.
+- **How you actually make lists** (this differs from the old skill, and the prompt follows your practice): settings are always `1,1,0 | n,n,n,n` with the whole-list card on. Sets get an imposed order (top-down anatomy, severity, frequency), stated in the Title or Remarks. `Original` uses `<br>` lines or `<ul>`. The Text fields wrap items in `<div>` or `<li>` to match.
+- Cloze Overlapper for 23x is installed (supports Anki up to 23.12.1). clanki fills Text1–20 and Full itself, so the add-on isn't needed when importing or sending (confirmed by test 1).
+- AnkiConnect is not installed yet (add-on code `2055492159`).
+
+## Architecture
+
+```
+Browser (React + TS, PDF.js) ──HTTP/SSE──▶ FastAPI (Python, uv) ──▶ SQLite (data dir)
+                                              ├─▶ LLM providers: Anthropic SDK | DeepSeek
+                                              ├─▶ LibreOffice (PPTX/DOCX → PDF)
+                                              └─▶ AnkiConnect  http://127.0.0.1:8765
+```
+
+- **Backend**: Python ≥3.12 managed by `uv`, with FastAPI and Uvicorn. SQLite through `sqlite3` with a thin repository layer. Background jobs run as an asyncio queue (default concurrency 3) and push progress to the UI over Server-Sent Events.
+- **Frontend**: React, TypeScript and Vite, with `pdfjs-dist` for the viewer and its text layer. The built UI (`src/clanki/static/`) is committed, so other PCs need only `uv` and Git (plus LibreOffice for PPTX/DOCX), not Node.
+- **Install on a PC**: install uv and Git, clone the repo, double-click `clanki.bat` (runs `uv run clanki` and opens the browser); `update.bat` pulls updates. See `README.md`.
+- **Config and data**: stored in `%APPDATA%\clanki` (via `platformdirs`), holding `config.toml` (API keys, default model, port, data dir) and `clanki.db` plus the uploaded files. The data dir can be pointed at OneDrive to share state between PCs, but then use only one PC at a time.
+- **AnkiConnect**: the backend calls it on localhost. On Windows both run on the same host, so no CORS setup is needed. (Dev in WSL needs WSL mirrored networking, or a stub.)
+
+## UI
+
+```
+┌ [doc tabs]  p.12/40  zoom  │ Profile: Medical (UKMLA) │ Model: … │ Jobs ●2 ⚠1 │ Send ▸ Anki ┐
+├───────────────────────────────────────────────┬───────────────────────────────┤
+│ READER (~65%)                                  │ CARDS (~35%)                   │
+│ PDF.js pages with selectable text              │ Filter: doc │ page │ selection │
+│ Highlights: amber = queued/running             │ Grouped by source, doc order   │
+│             green = has cards (click → cards)  │ ┌ fact · MoA ────────────────┐ │
+│ Selection → floating bar:                      │ │ Sacubitril (MoA, use) [2]  │ │
+│   Focus: [ MoA        ]  ⏎ generate            │ │ → Neprilysin inhibitor; HF │ │
+│ Coverage strip beside the scrollbar            │ │ Why ▸  · tags · ⚠ warnings │ │
+│                                                │ └ new │ sent ✓ │ edited ●  ───┘ │
+└────────────────────────────────────────────────┴───────────────────────────────┘
+```
+
+- Clicking a card scrolls the reader to its source highlight, and clicking a highlight filters the cards to it.
+- The jobs popover lists each job's state, elapsed time, tokens and cost, with retry and cancel. A failed job keeps its highlight marked red.
+- Each job's details list the content the model **left out** under the UKMLA scope, each with a "card this anyway" button. This makes the relevance filter auditable.
+
+### Keyboard shortcuts
+
+Single keys, active whenever you are not typing in a field; `?` shows the full sheet (defined in `frontend/src/keys.ts`). There is no pane focus: `N`/`L` use the current text selection if there is one. Browser-reserved combinations (e.g. Chrome's `Ctrl+Shift+A`) are avoided.
+
+| Key | Action |
+|---|---|
+| `N` / `L` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
+| `G` | Generate from the selection (milestone 2: opens the focus box; Enter with it empty runs unconditioned generation) |
+| `J` `K` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
+| `E` / `Enter` | Edit; `Ctrl+Enter` saves, `Esc` cancels |
+| `X` / `Z` | Delete / undo |
+| `R` | Toggle Add Reverse; turning it on opens the reverse-prompt box |
+| `[` `]`, `+` `-` `0` | Previous/next page, zoom, fit width |
+| `S` | Send new and edited cards to Anki |
+| `Shift+E` | Export `.txt` |
+| `O` | Open a document |
+
+Planned with generation (milestone 2): `Shift+G` whole document (cost estimate first), `.` jobs popover.
+
+## Generation pipeline
+
+**Request layout**, ordered for prompt caching: profile system prompt → facet vocabulary → document text → (uncached) task: the target passage plus the focus text.
+
+- **Highlight job**: the target is the selected text. The surrounding page text and section headings go in as *context only*. They let the model write context-free prompts (no "this drug"), but it cards only the target.
+- **Whole-document job**: split into chunks of about 4–6 pages, at headings where they can be detected. Each chunk is its own job with the whole document as the cached prefix. Jobs run in parallel and cards appear chunk by chunk. A final deterministic pass flags duplicates across chunks.
+- **Focus text** (e.g. "MoA") narrows the scope: only cards on that facet. With no focus, scope is UKMLA-relevant content, and everything left out is listed with a reason.
+
+**Output schema** (validated with Pydantic; one retry on invalid output):
+
+```json
+{
+  "cards": [
+    {"type": "qa", "front": "...", "back": "...", "why": "...", "add_reverse": true,
+     "reverse_prompt": "what country has this capital?",
+     "n_answers": 2, "facets": ["moa", "use"], "kind": "fact|linkage|concept", "tags": [], "flags": []},
+    {"type": "list", "title": "...", "items": ["..."], "ordered": true, "order_principle": "top-down anatomy",
+     "remarks": "...", "mnemonic": "", "full": true, "kind": "process|set", "tags": [], "flags": []}
+  ],
+  "left_out": [{"text": "...", "reason": "not UKMLA-relevant"}],
+  "image_occlusion_candidates": ["p.7 figure: brachial plexus"],
+  "flags": ["source says X; current NICE guidance says Y — check"]
+}
+```
+
+- **Claude**: structured outputs (`output_config.format`) with adaptive thinking and configurable effort, using prompt caching on the stable prefix.
+- **DeepSeek**: JSON output mode through its OpenAI-compatible endpoint, validated against the same schema.
+- **Deterministic validators** (ported from `build_anki_import.py`; results show as ⚠ on cards):
+  - Two cards share a Back (the reverse card would be ambiguous).
+  - A list has fewer than 2 or more than 20 items (warn above 8), or an item contains `::` `{{` `}}`.
+  - A list has no title.
+  - The `[n]` marker doesn't match the number of answers.
+  - A Basic Back has 4 or more `;` items (suggest a list instead).
+  - The Front contains answer words (a giveaway).
+  - Add Reverse is on but there is no reverse prompt. (A "reverse prompt repeats Front words" check was dropped: it flags good prompts such as `what country has this capital?` for `Capital of France`.)
+  - The Front matches an existing Anki note (via AnkiConnect).
+  - HTML outside the whitelist (`b i u sub sup br`).
+
+## Prompt profiles
+
+`prompts/<profile>/`, hard-coded in the repo and selectable per document:
+
+- `system.md`: card-writing rules.
+- `examples.md`: worked examples.
+- `profile.toml`: default deck and tag prefix, scope rule, whole-list policy, facet sets.
+
+`medical_ukmla` (the default) is adapted from `claude_skill.md`, corrected to your note types and conventions:
+
+- Telegraphic fronts. Subquestions go in brackets, e.g. `(MoA, use)`, with `[n]` when more than one answer is needed. Related facts whose recall is largely shared share one card. If `n` grows beyond about 3, make a list instead.
+- Subquestions must be generic, taken from the facet vocabulary (below), so one card's unusual question doesn't become the cue for its answer.
+- Add Reverse only when the Back, together with a short reverse prompt, pins down exactly one Front. Every reversed card gets that prompt: it says which dimension of the Front to recall, is telegraphic like a Front (`scar?`, `what country has this capital?`), and contains no Front words. If no such prompt exists, Add Reverse stays off.
+- Back is short. Reasoning goes in Why (Remarks for lists), following the skill's UKMLA standard: physiology first, never invent a mechanism, name the guideline source.
+- Sets get an imposed, stated order.
+- Nothing from `[note for llms]` ever appears in a card.
+
+`general` is a subject-neutral version for later.
+
+## Facet vocabulary (the "cache" from your Sacubitril note)
+
+Mined from your 15,255 Basic fronts, the most common bracketed subquestions are:
+
+| Facet | Count |
+|---|---|
+| definition (+ "def") | 892 |
+| function | 468 |
+| location | 390 |
+| MoA | 341 |
+| origin | 130 |
+| attachments | 112 |
+| pathophysiology | 103 |
+| name | 99 |
+| structure | 80 |
+| use | 71 |
+| cause(s) | 66 |
+| insertion | 57 |
+| innervation | 52 |
+
+Answer counts: `[2]` is used 861 times, `[3]` 252, `[4]` 61.
+
+How the cache works:
+
+- A `facets` table is seeded from Anki through AnkiConnect (refreshable). Synonyms are normalised (`def` → definition, `pathophys` → pathophysiology).
+- Facets are grouped by entity type. For a drug: MoA, use, class, adverse effects, contraindications, monitoring. For a nerve: origin, course, innervation.
+- The model gets the top ~50 facets plus the set for the entity type it is carding, and is told to prefer them. A new facet is allowed but flagged on the card.
+- Counts update when cards are sent. Every drug card is then asked the same generic questions, which avoids one-offs like "is it a prodrug?" on a single card.
+
+## Data model (SQLite)
+
+- `documents`: id, title, kind, file path, page count, profile, default deck.
+- `sources`: id, document_id, kind (`highlight`/`chunk`/`ocr`), page range, text, anchor (PDF.js page + text-content offsets, so highlights survive reloads).
+- `jobs`: id, source_id, focus, provider/model, status, tokens in/out, cost, error, raw response, left_out, flags, timestamps.
+- `notes`:
+  - id, `guid`, source_id, job_id, type, all fields, deck, tags, warnings.
+  - status: `new`/`sent`/`edited`/`deleted` (soft delete, so undo works).
+  - anki_note_id, sent_at.
+- `facets`: label, normalised label, entity type, count, origin (`anki`/`clanki`).
+- `settings`: key/value.
+
+The `guid` is generated when a card is created. It makes `.txt` re-imports update notes instead of duplicating them, which test 3b checks. AnkiConnect updates use `anki_note_id`.
+
+## Anki delivery
+
+1. **AnkiConnect**:
+   - On startup, call `version` and `modelFieldNames` for both note types and check that the field order matches the profile. Show a banner if, for example, Why is missing.
+   - Send with `addNotes`; for already-sent notes edited in clanki, use `updateNoteFields`.
+   - Before sending, run `findNotes` on each Front to warn about duplicates.
+   - The deck is chosen at send time.
+   - When Add Reverse is on, Back is assembled on send as `back + "<br>(r: " + reverse_prompt + ")"`. The format string lives in `profile.toml`.
+2. **`.txt` export**: the test 3 format (GUID, note type, deck and tags columns, then fields), confirmed working, including GUID-based updates on re-import. Back is assembled the same way as on send.
+
+## Milestones
+
+0. **Import tests: done.** All passed, and the Why field has been added.
+1. **Reader and manual cards, no LLM: done 2026-10-17.**
+   - Repo skeleton, `clanki.bat`, config.
+   - Open PDF/PPTX/DOCX; PDF.js reader with selection.
+   - Cards sidebar with full keyboard CRUD.
+   - Validators, `.txt` export, AnkiConnect send.
+
+   This is already useful as a faster manual workflow.
+2. **LLM generation**:
+   - Provider layer (Claude and DeepSeek), `medical_ukmla` prompt, schema.
+   - Job queue with SSE and the jobs indicator.
+   - Highlight anchoring, focus conditioning, whole-document chunking.
+   - Cost display.
+3. **Quality loop**: build an eval from 2–3 of your real handouts plus cards you'd accept. Compare Opus 5.5, Sonnet 5.5, DeepSeek V4 Pro and DeepSeek Flash side by side, and pick defaults per mode (e.g. a cheap model for the whole-document first pass, a stronger one for highlights).
+4. **Anki-aware**: facet vocabulary, duplicate warnings, coverage view.
+5. **OCR and web**:
+   - Drag a region on a page, or paste a screenshot.
+   - A vision model transcribes it into an editable snippet, which is then generated from.
+   - Web pages by URL, using a readability extractor.
+6. **Polish**: `general` profile, settings page, undo history, export filters.
+
+## Import tests (milestone 0, done)
+
+`design_docs/import_tests/` holds the test files and their generator, `make_import_tests.py`. All four imported correctly:
+
+- **Test 1**: your notes format.
+- **Test 2**: rendered cards into Basic.
+- **Test 3**: clanki's mixed-type format with a GUID column.
+- **Test 3b**: re-import updates notes in place.
+
+Two consequences:
+
+- List notes that clanki fills in work without the Cloze Overlapper add-on.
+- Test 3 is the `.txt` export format.
+
+The `Why` field is set up on both card templates as `{{#Why}}<hr><div class=why>{{Why}}</div>{{/Why}}`.
+
+## LLM access
+
+- **Subscription**: Pro includes no API access. Max 5x and 20x include $100/$200 per month of API credits. To use them, link a Console organization under claude.ai ▸ Settings ▸ Billing; the credits then pay for Messages API calls made with that organization's API key. Anthropic tells developers to use API keys and doesn't let apps offer claude.ai login, so clanki uses an API key.
+- **Claude models** (per MTok, input/output): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50, Fable 5.1 $10/$50. All accept images and PDFs and support structured outputs, prompt caching and batches.
+- **DeepSeek** (official pricing page, 2026-10-17; peak rate, off-peak is half):
+  - `deepseek-flash` (V4.1-Flash): $0.30/$1.20, accepts images.
+  - `deepseek-v4-pro`: $1.32/$3.96, text only.
+  - Handout text is sent to DeepSeek's servers; check this is acceptable for course material.
+- **Rough cost per 10-page handout** (about 10k tokens in, 5k out, before thinking tokens; thinking can add 2–4× to the output cost):
+
+  | Model | Cost |
+  |---|---|
+  | Opus 5.5 | ~$0.14 |
+  | Sonnet 5.5 | ~$0.07 |
+  | DeepSeek V4 Pro | ~$0.03 |
+  | DeepSeek Flash | ~$0.01 |
+
+  A single highlight costs cents or less.
+
+## Open items (not blocking milestone 1)
+
+- Default model: decided in milestone 3.
+- Sharing data between PCs: per-PC by default; OneDrive data dir is optional.
+- Whole-list card policy: follows your practice (always on). The old skill turned it on only for ordered lists of 5 items or fewer; this is configurable in `profile.toml`.

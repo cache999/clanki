@@ -1,0 +1,7 @@
+#separator:tab
+#html:true
+#notetype:Cloze (overlapping)
+#deck:clanki-test::1-notes
+#tags column:28
+CLANKI TEST 1 - inner planets (order from Sun)	Mercury<br>Venus<br>Earth<br>Mars		Test 1 (notes format, div style). Expect 5 cards: 4 overlapping + 1 whole-list.		1,1,0 | n,n,n,n	<div>{{c1::Mercury}}</div><div>...</div><div>...</div><div>...</div>	<div>Mercury</div><div>{{c2::Venus}}</div><div>...</div><div>...</div>	<div>...</div><div>Venus</div><div>{{c3::Earth}}</div><div>...</div>	<div>...</div><div>...</div><div>Earth</div><div>{{c4::Mars}}</div>																	<div>{{c21::Mercury}}</div><div>{{c21::Venus}}</div><div>{{c21::Earth}}</div><div>{{c21::Mars}}</div>	clanki-test
+CLANKI TEST 1 - Beatles members (set; order: alphabetical)	<ul><li>George</li><li>John</li><li>Paul</li><li>Ringo</li></ul>		Test 1 (notes format, ul style). Set with an imposed order, stated in the title.		1,1,0 | n,n,n,n	<ul><li>{{c1::George}}</li><li>...</li><li>...</li><li>...</li></ul>	<ul><li>George</li><li>{{c2::John}}</li><li>...</li><li>...</li></ul>	<ul><li>...</li><li>John</li><li>{{c3::Paul}}</li><li>...</li></ul>	<ul><li>...</li><li>...</li><li>Paul</li><li>{{c4::Ringo}}</li></ul>																	<ul><li>{{c21::George}}</li><li>{{c21::John}}</li><li>{{c21::Paul}}</li><li>{{c21::Ringo}}</li></ul>	clanki-test

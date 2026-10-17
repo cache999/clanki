@@ -1,0 +1,1 @@
+when you see [note for llms], these are not intended to be in the cards, but as a reference for your prompt construction

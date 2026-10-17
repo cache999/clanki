@@ -1,0 +1,154 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f6f6f4;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --border: #dddcd6;
+  --accent: #2459c9;
+  --sel: #e8eefc;
+  --ok: #1f7a3a;
+  --warn: #9a6200;
+  --bad: #b3261e;
+  --hl: rgba(255, 196, 0, 0.35);
+  --hl-cards: rgba(60, 170, 90, 0.3);
+  --hl-active: rgba(36, 89, 201, 0.35);
+  --reader-bg: #e9e8e4;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1a;
+    --panel: #242422;
+    --text: #e8e7e2;
+    --muted: #9b9a93;
+    --border: #3a3936;
+    --accent: #8fb0ff;
+    --sel: #2a3350;
+    --ok: #6cc98a;
+    --warn: #e0b052;
+    --bad: #ff8a80;
+    --reader-bg: #111110;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+input, select, textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+kbd {
+  font: 12px ui-monospace, monospace;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 4px;
+  background: var(--panel);
+}
+.muted { color: var(--muted); }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+/* Only the document text and form fields are selectable, so a drag that overshoots the page
+   does not pick up UI text. */
+.topbar, .reader-bar, .cards { user-select: none; }
+.cards .editor, input, textarea { user-select: text; }
+.topbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.topbar select { max-width: 280px; }
+.brand { margin-right: 4px; }
+.spacer { flex: 1; }
+.docfield { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.docfield input { width: 170px; color: var(--text); }
+.busy { color: var(--accent); }
+.pill { border-radius: 10px; padding: 1px 8px; font-size: 12px; border: 1px solid currentColor; }
+.pill.ok { color: var(--ok); }
+.pill.warn { color: var(--warn); }
+.pill.bad { color: var(--bad); }
+
+.main { display: grid; grid-template-columns: 1fr minmax(380px, 36%); min-height: 0; }
+
+.reader { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+.reader.welcome { display: flex; align-items: center; justify-content: center; background: var(--reader-bg); }
+.reader-bar {
+  display: flex; gap: 12px; align-items: center; padding: 3px 8px;
+  border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden;
+}
+.sel-info { overflow: hidden; text-overflow: ellipsis; }
+.reader-body { position: relative; min-height: 0; background: var(--reader-bg); }
+.pdf-container { position: absolute; inset: 0; overflow: auto; }
+.reader-error { padding: 16px; color: var(--bad); }
+
+/* highlight overlay, drawn under pdf.js's transparent text layer */
+.clanki-hl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.clanki-hl .hl { position: absolute; background: var(--hl); mix-blend-mode: multiply; border-radius: 2px; }
+.clanki-hl .hl.has-cards { background: var(--hl-cards); }
+.clanki-hl .hl.active { background: var(--hl-active); outline: 1px solid var(--accent); }
+.pdfViewer .page .textLayer { z-index: 2; }
+
+.cards { overflow: auto; border-left: 1px solid var(--border); min-height: 0; padding-bottom: 40vh; }
+.cards-bar {
+  position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: baseline;
+  padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.card { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: default; }
+.card.selected { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
+.card-meta { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.status { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.status.st-new { color: var(--accent); }
+.status.st-edited { color: var(--warn); }
+.status.st-sent { color: var(--ok); }
+.chip { font-size: 11px; padding: 0 6px; border-radius: 8px; }
+.front { font-weight: 600; margin-top: 2px; }
+.back { margin-top: 1px; }
+.back > div { display: inline; }
+.rprompt { color: var(--muted); margin-left: 6px; }
+.why { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.tags { color: var(--muted); font-size: 12px; }
+.items { margin: 2px 0 0; padding-left: 22px; }
+.issues { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+.issues .error { color: var(--bad); }
+.issues .warning { color: var(--warn); }
+.send-error { color: var(--bad); font-size: 12px; margin-top: 2px; }
+.empty { padding: 16px; }
+
+.editor { display: grid; gap: 6px; margin-top: 4px; }
+.editor label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.editor label.inline { display: flex; align-items: center; gap: 6px; }
+.editor textarea, .editor input:not([type]) { width: 100%; color: var(--text); font-size: 14px; resize: vertical; }
+.editor-actions { display: flex; align-items: center; gap: 6px; }
+
+.toast {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+  background: var(--text); color: var(--bg); padding: 6px 14px; border-radius: 6px; max-width: 80vw;
+}
+.toast.error { background: var(--bad); color: #fff; }
+
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: grid; place-items: center; z-index: 20; }
+.help {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 20px; max-height: 85vh; overflow: auto; min-width: 460px;
+}
+.help h2 { margin: 4px 0 8px; font-size: 18px; }
+.help h3 { margin: 10px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+.help td { padding: 2px 8px 2px 0; vertical-align: top; }
+.help td.keys { white-space: nowrap; }
+.help kbd { margin-right: 3px; }

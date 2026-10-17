@@ -1,0 +1,155 @@
+#separator:tab
+#html:true
+#notetype:Basic
+#deck:clanki-test::2-cards
+#tags:clanki-test
+"<div class=""front"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)
+</div>
+  <div class=""text"">
+    <div><span class=""cloze"" data-cloze=""Mercury"" data-ordinal=""1"">[...]</span></div><div>...</div><div>...</div><div>...</div>
+    <div class=""hidden"">
+       <div>Mercury<br>Venus<br>Earth<br>Mars</div>
+    </div>
+  </div>
+</div>"	"<div class=""back"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)</div>
+  <div class=""text"">
+    <div><span class=""cloze"" data-ordinal=""1"">Mercury</span></div><div>...</div><div>...</div><div>...</div>
+    <div class=""hidden"">Mercury<br>Venus<br>Earth<br>Mars</div>
+  </div>
+  <div class=""extra""><hr></div>
+  <div class=""text""><div class=""fullhint"">
+<a class=hint href=""#""
+onclick=""this.style.display='none';
+document.getElementById('hintc1a2b3c4d5e6f701').style.display='block';
+return false;"" draggable=false>
+Original</a>
+<div id=""hintc1a2b3c4d5e6f701"" class=hint style=""display: none"">Mercury<br>Venus<br>Earth<br>Mars</div>
+</div></div>
+  <div class=""extra"">
+    <div class=""extra-entry"">
+      <div class=""extra-descr"">Remarks</div><div>Test 2 (cards format): each overlapping card imported as its own Basic note.</div>
+    </div>
+  </div>
+</div>"
+"<div class=""front"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)
+</div>
+  <div class=""text"">
+    <div>Mercury</div><div><span class=""cloze"" data-cloze=""Venus"" data-ordinal=""2"">[...]</span></div><div>...</div><div>...</div>
+    <div class=""hidden"">
+       <div>Mercury<br>Venus<br>Earth<br>Mars</div>
+    </div>
+  </div>
+</div>"	"<div class=""back"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)</div>
+  <div class=""text"">
+    <div>Mercury</div><div><span class=""cloze"" data-ordinal=""2"">Venus</span></div><div>...</div><div>...</div>
+    <div class=""hidden"">Mercury<br>Venus<br>Earth<br>Mars</div>
+  </div>
+  <div class=""extra""><hr></div>
+  <div class=""text""><div class=""fullhint"">
+<a class=hint href=""#""
+onclick=""this.style.display='none';
+document.getElementById('hintc1a2b3c4d5e6f701').style.display='block';
+return false;"" draggable=false>
+Original</a>
+<div id=""hintc1a2b3c4d5e6f701"" class=hint style=""display: none"">Mercury<br>Venus<br>Earth<br>Mars</div>
+</div></div>
+  <div class=""extra"">
+    <div class=""extra-entry"">
+      <div class=""extra-descr"">Remarks</div><div>Test 2 (cards format): each overlapping card imported as its own Basic note.</div>
+    </div>
+  </div>
+</div>"
+"<div class=""front"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)
+</div>
+  <div class=""text"">
+    <div>...</div><div>Venus</div><div><span class=""cloze"" data-cloze=""Earth"" data-ordinal=""3"">[...]</span></div><div>...</div>
+    <div class=""hidden"">
+       <div>Mercury<br>Venus<br>Earth<br>Mars</div>
+    </div>
+  </div>
+</div>"	"<div class=""back"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)</div>
+  <div class=""text"">
+    <div>...</div><div>Venus</div><div><span class=""cloze"" data-ordinal=""3"">Earth</span></div><div>...</div>
+    <div class=""hidden"">Mercury<br>Venus<br>Earth<br>Mars</div>
+  </div>
+  <div class=""extra""><hr></div>
+  <div class=""text""><div class=""fullhint"">
+<a class=hint href=""#""
+onclick=""this.style.display='none';
+document.getElementById('hintc1a2b3c4d5e6f701').style.display='block';
+return false;"" draggable=false>
+Original</a>
+<div id=""hintc1a2b3c4d5e6f701"" class=hint style=""display: none"">Mercury<br>Venus<br>Earth<br>Mars</div>
+</div></div>
+  <div class=""extra"">
+    <div class=""extra-entry"">
+      <div class=""extra-descr"">Remarks</div><div>Test 2 (cards format): each overlapping card imported as its own Basic note.</div>
+    </div>
+  </div>
+</div>"
+"<div class=""front"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)
+</div>
+  <div class=""text"">
+    <div>...</div><div>...</div><div>Earth</div><div><span class=""cloze"" data-cloze=""Mars"" data-ordinal=""4"">[...]</span></div>
+    <div class=""hidden"">
+       <div>Mercury<br>Venus<br>Earth<br>Mars</div>
+    </div>
+  </div>
+</div>"	"<div class=""back"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)</div>
+  <div class=""text"">
+    <div>...</div><div>...</div><div>Earth</div><div><span class=""cloze"" data-ordinal=""4"">Mars</span></div>
+    <div class=""hidden"">Mercury<br>Venus<br>Earth<br>Mars</div>
+  </div>
+  <div class=""extra""><hr></div>
+  <div class=""text""><div class=""fullhint"">
+<a class=hint href=""#""
+onclick=""this.style.display='none';
+document.getElementById('hintc1a2b3c4d5e6f701').style.display='block';
+return false;"" draggable=false>
+Original</a>
+<div id=""hintc1a2b3c4d5e6f701"" class=hint style=""display: none"">Mercury<br>Venus<br>Earth<br>Mars</div>
+</div></div>
+  <div class=""extra"">
+    <div class=""extra-entry"">
+      <div class=""extra-descr"">Remarks</div><div>Test 2 (cards format): each overlapping card imported as its own Basic note.</div>
+    </div>
+  </div>
+</div>"
+"<div class=""front"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)
+</div>
+  <div class=""text"">
+    <div><span class=""cloze"" data-cloze=""Mercury"" data-ordinal=""21"">[...]</span></div><div><span class=""cloze"" data-cloze=""Venus"" data-ordinal=""21"">[...]</span></div><div><span class=""cloze"" data-cloze=""Earth"" data-ordinal=""21"">[...]</span></div><div><span class=""cloze"" data-cloze=""Mars"" data-ordinal=""21"">[...]</span></div>
+    <div class=""hidden"">
+       <div>Mercury<br>Venus<br>Earth<br>Mars</div>
+    </div>
+  </div>
+</div>"	"<div class=""back"">
+  <div class=""title"">CLANKI TEST 2 - inner planets (order from Sun)</div>
+  <div class=""text"">
+    <div><span class=""cloze"" data-ordinal=""21"">Mercury</span></div><div><span class=""cloze"" data-ordinal=""21"">Venus</span></div><div><span class=""cloze"" data-ordinal=""21"">Earth</span></div><div><span class=""cloze"" data-ordinal=""21"">Mars</span></div>
+    <div class=""hidden"">Mercury<br>Venus<br>Earth<br>Mars</div>
+  </div>
+  <div class=""extra""><hr></div>
+  <div class=""text""><div class=""fullhint"">
+<a class=hint href=""#""
+onclick=""this.style.display='none';
+document.getElementById('hintc1a2b3c4d5e6f701').style.display='block';
+return false;"" draggable=false>
+Original</a>
+<div id=""hintc1a2b3c4d5e6f701"" class=hint style=""display: none"">Mercury<br>Venus<br>Earth<br>Mars</div>
+</div></div>
+  <div class=""extra"">
+    <div class=""extra-entry"">
+      <div class=""extra-descr"">Remarks</div><div>Test 2 (cards format): each overlapping card imported as its own Basic note.</div>
+    </div>
+  </div>
+</div>"
