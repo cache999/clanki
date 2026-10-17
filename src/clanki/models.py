@@ -38,6 +38,11 @@ class Note(BaseModel):
     why: str = ""
     deck: str = ""
     tags: list[str] = Field(default_factory=list)
+    # from generation: card kind (fact, linkage, concept, process, set), subquestion facets,
+    # and the model's doubts (shown as warnings)
+    kind: str = ""
+    facets: list[str] = Field(default_factory=list)
+    flags: list[str] = Field(default_factory=list)
     # bookkeeping
     status: Literal["new", "sent", "edited"] = "new"
     deleted: bool = False
@@ -58,11 +63,39 @@ class Document(BaseModel):
 
 
 class Source(BaseModel):
-    """A highlighted passage. `rects` are [x, y, w, h] as fractions of the page box, so they
-    survive zoom changes."""
+    """What cards were made from: a highlighted passage, or a page range for whole-document
+    generation. `rects` are [x, y, w, h] as fractions of the page box, so they survive zoom
+    changes."""
     id: str | None = None
     document_id: str
+    kind: Literal["highlight", "chunk"] = "highlight"
     page: int
+    page_end: int | None = None
     text: str
     rects: list[list[float]] = Field(default_factory=list)
     created_at: str | None = None
+
+
+class Job(BaseModel):
+    """One generation request to the LLM and what came of it."""
+    id: str | None = None
+    document_id: str
+    source_id: str | None = None
+    mode: Literal["highlight", "chunk"]
+    pages: tuple[int, int]
+    target: str
+    focus: str = ""
+    profile: str = "medical_ukmla"
+    model: str = "deepseek-flash"
+    status: Literal["queued", "running", "done", "failed", "cancelled"] = "queued"
+    error: str | None = None
+    attempts: int = 0
+    usage: dict[str, int] = Field(default_factory=lambda: {"cache_hit": 0, "cache_miss": 0, "output": 0, "reasoning": 0})
+    cost_usd: float = 0.0
+    note_ids: list[str] = Field(default_factory=list)
+    left_out: list[dict] = Field(default_factory=list)
+    flags: list[str] = Field(default_factory=list)
+    image_occlusion: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None

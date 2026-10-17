@@ -54,6 +54,28 @@ def test_saving_unchanged_content_keeps_sent_status(store, doc):
     assert store.update_note(n.id, {"back": "1"}).status == "sent"
 
 
+def test_dismissing_model_flags_does_not_mark_a_sent_note_edited(store, doc):
+    n = store.add_note(Note(type="qa", front="A", back="1", document_id=doc.id, flags=["x", "y"]))
+    store.mark_sent(n.id, anki_note_id=1)
+    after = store.update_note(n.id, {"flags": ["y"]})
+    assert (after.flags, after.status) == (["y"], "sent")
+
+
+def test_editing_content_clears_model_flags(store, doc):
+    n = store.add_note(Note(type="qa", front="A", back="1", document_id=doc.id, flags=["check"]))
+    assert store.update_note(n.id, {"back": "2"}).flags == []
+
+
+def test_content_edit_with_explicit_flags_keeps_them(store, doc):
+    n = store.add_note(Note(type="qa", front="A", back="1", document_id=doc.id, flags=["old"]))
+    assert store.update_note(n.id, {"back": "2", "flags": ["new"]}).flags == ["new"]
+
+
+def test_saving_unchanged_content_keeps_flags(store, doc):
+    n = store.add_note(Note(type="qa", front="A", back="1", document_id=doc.id, flags=["check"]))
+    assert store.update_note(n.id, {"back": "1"}).flags == ["check"]
+
+
 def test_bookkeeping_fields_cannot_be_patched(store, doc):
     n = store.add_note(Note(type="qa", front="A", back="1", document_id=doc.id))
     with pytest.raises(ValueError):

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type AnkiStatus, type Doc, type Note, type NoteDraft, type Source } from "./api";
+import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
+import { DocumentConfirm, FocusBox, JobsPanel, SettingsDialog } from "./Generate";
 import { Help } from "./Help";
+import { jobSummary, money, pagesLabel, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
 import { Reader, type ReaderHandle, type ReaderSelection } from "./Reader";
 import { joinLines, orderNotes, splitItems } from "./selection";
@@ -40,12 +42,23 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [docConfirm, setDocConfirm] = useState<Estimate | null>(null);
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const doc = docs.find((d) => d.id === docId) ?? null;
   const ordered = useMemo(() => orderNotes(notes, sources), [notes, sources]);
-  const pages = useMemo(() => new Map(sources.map((s) => [s.id, s.page])), [sources]);
+  const sourceLabels = useMemo(
+    () => new Map(sources.map((s) => [s.id, pagesLabel([s.page, s.page_end ?? s.page])])),
+    [sources],
+  );
+  const sourceStatus = useMemo(() => sourceStates(jobs), [jobs]);
+  const summary = jobSummary(jobs);
   const sourcesWithCards = useMemo(() => new Set(notes.map((n) => n.source_id).filter(Boolean) as string[]), [notes]);
   const selected = notes.find((n) => n.id === selectedId) ?? null;
 
@@ -80,6 +93,7 @@ export function App() {
       const last = recall();
       setDocId(d.some((x) => x.id === last) ? last : (d[d.length - 1]?.id ?? null));
     });
+    void api.settings().then(setSettings, () => setSettings(null));
     const poll = () => void api.ankiStatus().then(setAnki, () => setAnki(null));
     poll();
     const t = setInterval(poll, 15000);
@@ -95,11 +109,75 @@ export function App() {
     setSelection(null);
     setUndoStack([]);
     setSendErrors({});
+    setJobs([]);
+    setFocusOpen(false);
     if (docId) {
       remember(docId);
       void guard(refresh(docId));
+      void guard(api.jobs(docId)).then((j) => j && setJobs(j));
     }
   }, [docId]);
+
+  // While jobs run, poll once a second; when one finishes, reload the cards it made.
+  const activeIds = jobs.filter((j) => j.status === "queued" || j.status === "running").map((j) => j.id).join(",");
+  useEffect(() => {
+    if (!docId || !activeIds) return;
+    const t = setInterval(async () => {
+      const latest = await api.jobs(docId).catch(() => null);
+      if (!latest) return;
+      setJobs(latest);
+      const stillActive = new Set(latest.filter((j) => j.status === "queued" || j.status === "running").map((j) => j.id));
+      if (activeIds.split(",").some((id) => !stillActive.has(id))) {
+        await refresh(docId);
+        const failed = latest.filter((j) => activeIds.includes(j.id) && j.status === "failed");
+        if (failed.length) say(`Generation failed: ${failed[0].error}`, "error");
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [docId, activeIds]);
+
+  async function reloadJobs() {
+    if (!docId) return;
+    const j = await guard(api.jobs(docId));
+    if (j) setJobs(j);
+    await refresh(docId);
+  }
+
+  async function generateSelection(focus: string) {
+    if (!doc || !selection) return;
+    setFocusOpen(false);
+    const r = await guard(
+      api.generate(doc.id, {
+        mode: "selection",
+        selection: { page: selection.page, text: selection.text, rects: selection.rects },
+        focus,
+      }),
+    );
+    if (!r) return;
+    setSelection(null);
+    reader.current?.clearSelection();
+    await reloadJobs();
+  }
+
+  async function confirmDocument() {
+    if (!doc) return;
+    const e = await guard(api.estimate(doc.id));
+    if (e) setDocConfirm(e);
+  }
+
+  async function generateDocument(focus: string) {
+    if (!doc) return;
+    setDocConfirm(null);
+    const r = await guard(api.generate(doc.id, { mode: "document", focus }));
+    if (!r) return;
+    say(`Generating ${r.jobs.length} section${r.jobs.length === 1 ? "" : "s"}… (. shows progress)`);
+    await reloadJobs();
+  }
+
+  async function changeModel(model: string) {
+    const s = await guard(api.putSettings({ default_model: model }));
+    if (s) setSettings(s);
+  }
 
   async function openFile(file: File) {
     setBusy(`Opening ${file.name}…`);
@@ -160,6 +238,12 @@ export function App() {
       setSendErrors(({ [id]: _, ...rest }) => rest);
       await refresh(doc.id);
     }
+  }
+
+  async function dismissFlag(id: string, flag: string) {
+    const n = notes.find((x) => x.id === id);
+    if (!doc || !n) return;
+    if (await guard(api.updateNote(id, { flags: n.flags.filter((f) => f !== flag) }))) await refresh(doc.id);
   }
 
   function move(delta: number) {
@@ -223,7 +307,15 @@ export function App() {
       case "newList":
         return startNew("list");
       case "generate":
-        return say("Generating cards with an LLM arrives in milestone 2");
+        if (!doc) return say("Open a document first (O)");
+        if (!selection) return say("Select text first, or press Shift+G for the whole document");
+        return setFocusOpen(true);
+      case "generateDocument":
+        return doc ? void confirmDocument() : say("Open a document first (O)");
+      case "jobs":
+        return setJobsOpen((o) => !o);
+      case "settings":
+        return setSettingsOpen(true);
       case "next":
         return move(1);
       case "prev":
@@ -264,14 +356,15 @@ export function App() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !isTyping(e.target)) {
         if (help) setHelp(false);
+        else if (jobsOpen) setJobsOpen(false);
         else if (selection) {
           setSelection(null);
           reader.current?.clearSelection();
         }
         return;
       }
-      if (help) return;
-      const c = commandFor(e, isTyping(e.target) || editing !== null);
+      if (help || settingsOpen || docConfirm) return;
+      const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen);
       if (c) {
         e.preventDefault();
         runRef.current(c);
@@ -279,7 +372,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen]);
 
   const pending = notes.filter((n) => n.status !== "sent").length;
   return (
@@ -340,6 +433,27 @@ export function App() {
         )}
         <span className="spacer" />
         {busy && <span className="busy">{busy}</span>}
+        {settings && (
+          <select
+            className="model"
+            value={settings.default_model}
+            onChange={(e) => changeModel(e.target.value)}
+            title="Model for generation"
+          >
+            {settings.providers.deepseek.models.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        )}
+        <button
+          className={`jobs-btn ${summary.active ? "active" : ""} ${summary.failed ? "has-failed" : ""}`}
+          onClick={() => setJobsOpen((o) => !o)}
+          title="Generation jobs (.)"
+        >
+          Jobs{summary.active ? ` ● ${summary.active}` : ""}
+          {summary.failed ? ` ⚠ ${summary.failed}` : ""}
+          {summary.cost ? ` · ${money(summary.cost)}` : ""}
+        </button>
         <AnkiPill status={anki} />
         <button onClick={() => run("send")} disabled={!doc} title="Send new and edited cards to Anki (S)">
           Send to Anki{pending ? ` (${pending})` : ""}
@@ -347,10 +461,19 @@ export function App() {
         <button onClick={() => run("export")} disabled={!doc} title="Download an Anki import file (Shift+E)">
           Export .txt
         </button>
+        <button onClick={() => setSettingsOpen(true)} title="Settings (,)">
+          ⚙
+        </button>
         <button onClick={() => setHelp(true)} title="Keyboard shortcuts (?)">
           ?
         </button>
       </header>
+      {settings && !settings.providers.deepseek.key.set && (
+        <div className="banner">
+          No DeepSeek API key yet: generation needs one.{" "}
+          <button onClick={() => setSettingsOpen(true)}>Add it in Settings</button>
+        </div>
+      )}
       <DeckList connected={!!anki?.connected} />
       <main className="main">
         {doc ? (
@@ -360,7 +483,17 @@ export function App() {
             sources={sources}
             activeSourceId={selected?.source_id ?? null}
             sourcesWithCards={sourcesWithCards}
+            sourceStatus={sourceStatus}
             selection={selection}
+            bar={
+              focusOpen && selection ? (
+                <FocusBox
+                  pageLabel={`p.${selection.page}`}
+                  onSubmit={(f) => void generateSelection(f)}
+                  onCancel={() => setFocusOpen(false)}
+                />
+              ) : undefined
+            }
             onSelection={setSelection}
             onSourceClick={(sid) => {
               const n = ordered.find((x) => x.source_id === sid);
@@ -376,7 +509,7 @@ export function App() {
         )}
         <Cards
           notes={ordered}
-          pages={pages}
+          sourceLabels={sourceLabels}
           selectedId={selectedId}
           editing={editing}
           draft={draft}
@@ -390,8 +523,24 @@ export function App() {
           onSave={save}
           onCreate={(f) => void create({ ...f, sel: draft?.sel })}
           onShowSource={(sid) => reader.current?.showSource(sid)}
+          onDismissFlag={(id, flag) => void dismissFlag(id, flag)}
         />
       </main>
+      {jobsOpen && (
+        <JobsPanel
+          jobs={jobs}
+          onClose={() => setJobsOpen(false)}
+          onChanged={() => void reloadJobs()}
+          onShowSource={(sid) => reader.current?.showSource(sid)}
+          say={say}
+        />
+      )}
+      {docConfirm && (
+        <DocumentConfirm estimate={docConfirm} onSubmit={(f) => void generateDocument(f)} onCancel={() => setDocConfirm(null)} />
+      )}
+      {settingsOpen && settings && (
+        <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} />
+      )}
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       {help && <Help onClose={() => setHelp(false)} />}
     </div>

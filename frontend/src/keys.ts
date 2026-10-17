@@ -4,6 +4,7 @@ export type Command =
   | "newCard"
   | "newList"
   | "generate"
+  | "generateDocument"
   | "next"
   | "prev"
   | "edit"
@@ -18,14 +19,18 @@ export type Command =
   | "send"
   | "export"
   | "open"
+  | "jobs"
+  | "settings"
   | "help";
 
-type Shortcut = { command: Command; keys: string[]; help: string; group: "Cards" | "Reader" | "Anki" | "App" };
+type Shortcut = { command: Command; keys: string[]; help: string; group: "Cards" | "Generate" | "Reader" | "Anki" | "App" };
 
 export const SHORTCUTS: Shortcut[] = [
   { command: "newCard", keys: ["n"], help: "New card (uses the selected text, if any)", group: "Cards" },
   { command: "newList", keys: ["l"], help: "New list card (one item per selected line)", group: "Cards" },
-  { command: "generate", keys: ["g"], help: "Generate cards from selection (milestone 2)", group: "Cards" },
+  { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty)", group: "Generate" },
+  { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
+  { command: "jobs", keys: ["."], help: "Show generation jobs: cost, errors, left-out content", group: "Generate" },
   { command: "next", keys: ["j", "ArrowDown"], help: "Next card", group: "Cards" },
   { command: "prev", keys: ["k", "ArrowUp"], help: "Previous card", group: "Cards" },
   { command: "edit", keys: ["e", "Enter"], help: "Edit card · Ctrl+Enter saves · Esc cancels", group: "Cards" },
@@ -40,6 +45,7 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "send", keys: ["s"], help: "Send new and edited cards to Anki", group: "Anki" },
   { command: "export", keys: ["Shift+e"], help: "Export cards as an Anki import file (.txt)", group: "Anki" },
   { command: "open", keys: ["o"], help: "Open a PDF, PPTX or DOCX", group: "App" },
+  { command: "settings", keys: [","], help: "Settings: API key, default model", group: "App" },
   { command: "help", keys: ["?"], help: "Show shortcuts", group: "App" },
 ];
 

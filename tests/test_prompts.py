@@ -1,0 +1,51 @@
+import json
+
+from clanki.generation import EXAMPLE_OUTPUT, parse_output
+from clanki.prompts import MAX_CONTEXT_CHARS, build_messages, load_profile
+
+PAGES = ["Rods and cones.", "Rhodopsin absorbs maximally near 498 nm.", "Bipolar cells."]
+
+
+def test_profile_loads_with_label_and_a_json_example():
+    p = load_profile("medical_ukmla")
+    assert p.label == "Medical (UKMLA)"
+    assert "JSON" in p.system  # DeepSeek's JSON mode needs the word and an example
+    example = json.dumps(EXAMPLE_OUTPUT, ensure_ascii=False, indent=1)
+    assert example in p.system and len(parse_output(example).cards) == 3
+    assert "{EXAMPLE}" not in p.system
+
+
+def test_system_prompt_is_stable_between_loads():
+    assert load_profile("medical_ukmla").system == load_profile("medical_ukmla").system
+
+
+def _msgs(**kw):
+    args = dict(title="Vision", pages=PAGES, target="Rhodopsin absorbs maximally near 498 nm.",
+                target_pages=(2, 2), focus="", mode="highlight")
+    return build_messages(load_profile("medical_ukmla"), **{**args, **kw})
+
+
+def test_messages_are_system_then_user_with_document_then_target():
+    system, user = _msgs()
+    assert system == {"role": "system", "content": load_profile("medical_ukmla").system}
+    text = user["content"]
+    assert user["role"] == "user"
+    assert text.index('<document title="Vision"') < text.index("[p.1]") < text.index("<target") < text.index("Focus")
+    assert '<target pages="2">\nRhodopsin absorbs maximally near 498 nm.\n</target>' in text
+    assert "Focus: none" in text
+
+
+def test_jobs_on_one_document_share_the_document_prefix():
+    a = _msgs()[1]["content"]
+    b = _msgs(target="Bipolar cells.", target_pages=(3, 3), focus="MoA", mode="chunk")[1]["content"]
+    doc_end = a.index("</document>") + len("</document>")
+    assert a[:doc_end] == b[:doc_end]
+    assert "Focus: MoA" in b and "whole section" in b
+
+
+def test_large_documents_send_only_pages_around_the_target():
+    pages = ["page %d " % i + "x" * 20000 for i in range(1, 21)]
+    text = _msgs(pages=pages, target="x", target_pages=(10, 10))[1]["content"]
+    assert len(text) < MAX_CONTEXT_CHARS
+    assert "[p.8]" in text and "[p.12]" in text and "[p.7]" not in text and "[p.13]" not in text
+    assert 'pages="8-12"' in text

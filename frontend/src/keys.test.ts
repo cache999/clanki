@@ -19,6 +19,13 @@ describe("commandFor", () => {
     expect(commandFor(k("N", { shiftKey: true }), false)).toBeNull();
   });
 
+  it("maps generation, jobs and settings", () => {
+    expect(commandFor(k("g"), false)).toBe("generate");
+    expect(commandFor(k("G", { shiftKey: true }), false)).toBe("generateDocument");
+    expect(commandFor(k("."), false)).toBe("jobs");
+    expect(commandFor(k(","), false)).toBe("settings");
+  });
+
   it("matches symbols regardless of Shift", () => {
     expect(commandFor(k("?", { shiftKey: true }), false)).toBe("help");
     expect(commandFor(k("+", { shiftKey: true }), false)).toBe("zoomIn");

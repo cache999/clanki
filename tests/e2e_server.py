@@ -1,7 +1,9 @@
-"""clanki with a throwaway data dir and an in-memory AnkiConnect, for end-to-end tests and for
-trying the UI without Anki. Usage: uv run python tests/e2e_server.py [--port 18710]"""
+"""clanki with a throwaway data dir, an in-memory AnkiConnect and (unless --real-llm) a fake LLM,
+for end-to-end tests and for trying the UI without Anki.
+Usage: uv run python tests/e2e_server.py [--port 18710] [--real-llm]"""
 import argparse
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -11,7 +13,11 @@ from pathlib import Path
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).parent))
+import keyring  # noqa: E402
+
 from fake_anki import FakeAnki  # noqa: E402
+from fake_keyring import MemoryKeyring  # noqa: E402
+from fake_llm import EchoLLM  # noqa: E402
 
 from clanki.app import create_app  # noqa: E402
 from clanki.config import Config  # noqa: E402
@@ -51,12 +57,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=18710)
     ap.add_argument("--anki-port", type=int, default=18765)
+    ap.add_argument("--real-llm", action="store_true", help="use DeepSeek with DEEPSEEK_API_KEY (costs money)")
     args = ap.parse_args()
     serve_fake_anki(args.anki_port)
+    provider_for = None  # clanki's default: DeepSeek with the configured key
+    if not args.real_llm:
+        os.environ.pop("DEEPSEEK_API_KEY", None)  # never spend money in tests
+        keyring.set_keyring(MemoryKeyring())
+        provider_for = EchoLLM
     data = Path(tempfile.mkdtemp(prefix="clanki-e2e-"))
     cfg = Config(data_dir=data, port=args.port, anki_url="http://127.0.0.1:%d" % args.anki_port)
     print("clanki e2e: http://127.0.0.1:%d/  data=%s" % (args.port, data), flush=True)
-    uvicorn.run(create_app(cfg), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(create_app(cfg, provider_for=provider_for), host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def _items(n: Note) -> list[str]:
 
 
 def _check_one(n: Note) -> list[Issue]:
-    out = []
+    out = [_warn("model_flag", f) for f in n.flags if f.strip()]
     if n.type == "qa":
         if not n.front.strip():
             out.append(_err("empty_front", "Front is empty"))

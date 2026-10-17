@@ -125,3 +125,66 @@ test("document survives a reload with its highlights", async ({ page }) => {
   await expect(page.locator(".card")).toHaveCount(3);
   await expect(page.locator(".clanki-hl .hl.has-cards").first()).toBeVisible();
 });
+
+test("generate cards with the LLM", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".textLayer span", { hasText: "Rhodopsin" })).toBeVisible();
+
+  // no key yet: the banner points to Settings; save and test a key there
+  await expect(page.locator(".banner")).toContainText("No DeepSeek API key");
+  await page.keyboard.press(",");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings.locator(".key-status")).toContainText("not set");
+  await settings.locator('input[type="password"]').fill("sk-test-abcd");
+  await settings.getByRole("button", { name: "Save" }).click();
+  await expect(settings.locator(".key-status")).toContainText("credential store (…abcd)");
+  await settings.getByRole("button", { name: "Test" }).click();
+  await expect(settings).toContainText("The key works");
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(page.locator(".banner")).toHaveCount(0);
+
+  // G on a selection, with a focus; its highlight turns green once it has cards
+  const greenBefore = await page.locator(".clanki-hl .hl.has-cards").count();
+  await select(page, "Cones mediate colour vision");
+  await page.keyboard.press("g");
+  const focus = page.locator(".focusbox input");
+  await expect(focus).toBeFocused();
+  await focus.fill("function");
+  await page.keyboard.press("Enter");
+  const gen = card(page, "Generated: Cones mediate colour vision in bright");
+  await expect(gen).toContainText("focus was function");
+  await expect(gen.locator(".ai")).toHaveText("AI");
+  await expect(gen.locator(".kindtag")).toHaveText("fact");
+  await expect(page.locator(".clanki-hl .hl.has-cards")).toHaveCount(greenBefore + 1);
+
+  // jobs panel: cost, and carding left-out content
+  await page.keyboard.press(".");
+  const panel = page.getByRole("dialog", { name: "Generation jobs" });
+  await expect(panel.locator(".job").first()).toContainText("done");
+  await expect(panel.locator(".job").first()).toContainText("1 cards");
+  await panel.locator("summary").first().click();
+  await panel.getByRole("button", { name: "Card this" }).first().click();
+  await expect(card(page, "Generated: a left-out sentence")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+
+  // whole document, after the estimate
+  await page.keyboard.press("Shift+G");
+  const confirm = page.getByRole("dialog", { name: "Generate whole document" });
+  await expect(confirm).toContainText("1 section");
+  await expect(confirm).toContainText("deepseek-flash");
+  await page.keyboard.press("Enter");
+  const listCard = card(page, "Generated list");
+  await expect(listCard).toContainText("p.1–2");
+  await expect(listCard.locator(".issues .warning")).toContainText("check the order");
+  // model notes can be dismissed; the card's status is unaffected
+  await listCard.locator(".issues .dismiss").click();
+  await expect(listCard.locator(".issues")).toHaveCount(0);
+  await expect(listCard.locator(".status")).toHaveText("new");
+
+  // model choice persists
+  await page.locator("select.model").selectOption("deepseek-v4-pro");
+  await page.reload();
+  await expect(page.locator("select.model")).toHaveValue("deepseek-v4-pro");
+});

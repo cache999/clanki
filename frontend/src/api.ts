@@ -24,6 +24,9 @@ export type Note = {
   status: "new" | "sent" | "edited";
   anki_note_id: number | null;
   created_at: string;
+  kind: string;
+  facets: string[];
+  flags: string[];
   issues: Issue[];
 };
 
@@ -40,8 +43,62 @@ export type Doc = {
   tags: string[];
 };
 
-/** rects are [x, y, w, h] as fractions of the page box. */
-export type Source = { id: string; document_id: string; page: number; text: string; rects: number[][] };
+/** A highlight, or a page range used for whole-document generation (kind "chunk", no rects).
+ * rects are [x, y, w, h] as fractions of the page box. */
+export type Source = {
+  id: string;
+  document_id: string;
+  kind: "highlight" | "chunk";
+  page: number;
+  page_end: number | null;
+  text: string;
+  rects: number[][];
+};
+
+export type Job = {
+  id: string;
+  document_id: string;
+  source_id: string | null;
+  mode: "highlight" | "chunk";
+  pages: [number, number];
+  target: string;
+  focus: string;
+  model: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  error: string | null;
+  attempts: number;
+  usage: { cache_hit: number; cache_miss: number; output: number; reasoning: number };
+  cost_usd: number;
+  note_ids: string[];
+  left_out: { text: string; reason: string }[];
+  flags: string[];
+  image_occlusion: string[];
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type Estimate = {
+  chunks: number;
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+  cost_usd: number;
+  peak: boolean;
+};
+
+export type KeyStatus = { set: boolean; source: "env" | "keyring" | null; hint: string | null };
+export type Settings = {
+  providers: { deepseek: { models: string[]; key: KeyStatus } };
+  default_model: string;
+};
+
+export type GenerateBody = {
+  mode: "selection" | "document";
+  selection?: Pick<Source, "page" | "text" | "rects">;
+  focus?: string;
+  model?: string;
+};
 
 export type AnkiStatus = { connected: boolean; version: number | null; problems: string[] };
 
@@ -106,4 +163,20 @@ export const api = {
   ankiStatus: () => call<AnkiStatus>("GET", "/api/anki/status"),
   ankiDecks: () => call<string[]>("GET", "/api/anki/decks"),
   send: (docId: string) => call<SendResponse>("POST", `/api/documents/${docId}/send`),
+
+  generate: (docId: string, body: GenerateBody) =>
+    call<{ jobs: Job[] }>("POST", `/api/documents/${docId}/generate`, body),
+  estimate: (docId: string, model?: string) =>
+    call<Estimate>("GET", `/api/documents/${docId}/estimate` + (model ? `?model=${encodeURIComponent(model)}` : "")),
+  jobs: (docId: string) => call<Job[]>("GET", `/api/documents/${docId}/jobs`),
+  cancelJob: (id: string) => call<Job>("POST", `/api/jobs/${id}/cancel`),
+  retryJob: (id: string, model?: string) => call<Job>("POST", `/api/jobs/${id}/retry`, { model }),
+  cardLeftOut: (id: string, index: number) => call<Job>("POST", `/api/jobs/${id}/left-out/${index}`),
+
+  settings: () => call<Settings>("GET", "/api/settings"),
+  putSettings: (s: { default_model: string }) => call<Settings>("PUT", "/api/settings", s),
+  putKey: (provider: string, key: string) => call<KeyStatus>("PUT", `/api/settings/keys/${provider}`, { key }),
+  deleteKey: (provider: string) => call<KeyStatus>("DELETE", `/api/settings/keys/${provider}`),
+  testKey: (provider: string) =>
+    call<{ ok: boolean; error: string | null }>("POST", `/api/settings/keys/${provider}/test`),
 };

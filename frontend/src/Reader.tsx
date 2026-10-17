@@ -35,7 +35,10 @@ type Props = {
   sources: Source[];
   activeSourceId: string | null;
   sourcesWithCards: Set<string>;
+  sourceStatus: Map<string, "pending" | "failed">;
   selection: ReaderSelection | null;
+  /** Replaces the selection hint in the reader bar (e.g. the generation focus box). */
+  bar?: React.ReactNode;
   onSelection(sel: ReaderSelection | null): void;
   onSourceClick(sourceId: string): void;
 };
@@ -53,14 +56,18 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     const div: HTMLElement | undefined = view?.div;
     if (!div) return;
     div.querySelector(".clanki-hl")?.remove();
-    const { sources, activeSourceId, sourcesWithCards } = propsRef.current;
+    const { sources, activeSourceId, sourcesWithCards, sourceStatus } = propsRef.current;
     const layer = document.createElement("div");
     layer.className = "clanki-hl";
     for (const s of sources) {
       if (s.page !== pageNumber) continue;
       for (const [x, y, w, h] of s.rects) {
         const r = document.createElement("div");
-        r.className = "hl" + (sourcesWithCards.has(s.id) ? " has-cards" : "") + (s.id === activeSourceId ? " active" : "");
+        const state = sourceStatus.get(s.id);
+        r.className =
+          "hl" +
+          (state ? " " + state : sourcesWithCards.has(s.id) ? " has-cards" : "") +
+          (s.id === activeSourceId ? " active" : "");
         Object.assign(r.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
         layer.appendChild(r);
       }
@@ -116,7 +123,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     };
   }, [props.url]);
 
-  useEffect(redrawAll, [props.sources, props.activeSourceId, props.sourcesWithCards]);
+  useEffect(redrawAll, [props.sources, props.activeSourceId, props.sourcesWithCards, props.sourceStatus]);
 
   function onMouseUp(e: React.MouseEvent) {
     const sel = window.getSelection();
@@ -183,13 +190,15 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
         <span className="muted">
           p. {page.current}/{page.count || "…"}
         </span>
-        {sel ? (
+        {props.bar ? (
+          props.bar
+        ) : sel ? (
           <span className="sel-info">
             Selected on p.{sel.page}: “{sel.text.length > 60 ? sel.text.slice(0, 60) + "…" : sel.text}” —{" "}
-            <kbd>N</kbd> card · <kbd>L</kbd> list · <kbd>Esc</kbd> clear
+            <kbd>G</kbd> generate · <kbd>N</kbd> card · <kbd>L</kbd> list · <kbd>Esc</kbd> clear
           </span>
         ) : (
-          <span className="muted">Select text, then press N for a card or L for a list</span>
+          <span className="muted">Select text, then G to generate cards, or N / L to write one · Shift+G: whole document</span>
         )}
       </div>
       <div className="reader-body">

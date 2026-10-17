@@ -5,22 +5,40 @@ import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
+import json
+from datetime import datetime, timezone
+from typing import Literal
+
 from fastapi import Body, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from . import convert
+from . import keys as keystore
 from .anki_format import export_txt
 from .ankiconnect import AnkiConnect, AnkiUnavailable, SendResult
 from .config import Config
-from .models import Document, Note, Source
+from .doctext import chunk_pages, document_text, page_texts
+from .jobs import JobRunner
+from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
+from .models import Document, Job, Note, Source
+from .prompts import load_profile
 from .store import Store
 from .validators import validate
 
 STATIC = Path(__file__).parent / "static"
 KINDS = {".pdf": "pdf", ".pptx": "pptx", ".ppt": "pptx", ".odp": "pptx",
          ".docx": "docx", ".doc": "docx", ".odt": "docx"}
+LEFT_OUT_FOCUS = "Card this content regardless of UKMLA relevance."
+PARALLEL_JOBS = 3
+
+
+def default_provider():
+    key = keystore.get_key("deepseek")
+    if not key:
+        raise LLMError("No DeepSeek API key: add one in Settings, or set DEEPSEEK_API_KEY")
+    return DeepSeek(key)
 
 
 class DocumentPatch(BaseModel):
@@ -36,11 +54,57 @@ class SourceIn(BaseModel):
     rects: list[list[float]] = []
 
 
-def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None = None) -> FastAPI:
+class GenerateIn(BaseModel):
+    mode: Literal["selection", "document"]
+    selection: SourceIn | None = None
+    focus: str = ""
+    model: str | None = None
+
+
+class RetryIn(BaseModel):
+    model: str | None = None
+
+
+class SettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    default_model: str | None = None
+
+
+class KeyIn(BaseModel):
+    key: str
+
+
+def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None = None,
+               provider_for=None, jobs_inline: bool = False) -> FastAPI:
     store = store or Store(cfg.data_dir / "clanki.db")
     anki = anki or AnkiConnect(cfg.anki_url)
+    provider_for = provider_for or default_provider
     files = cfg.data_dir / "files"
     app = FastAPI(title="clanki")
+
+    def pages_for(doc_id: str) -> list[str]:
+        cache = files / doc_id / "pages.json"
+        if cache.exists():
+            return json.loads(cache.read_text(encoding="utf-8"))
+        pages = page_texts(files / doc_id / "document.pdf")
+        cache.write_text(json.dumps(pages, ensure_ascii=False), encoding="utf-8")
+        return pages
+
+    runner = (JobRunner(store, pages_for, provider_for) if jobs_inline
+              else JobRunner.threaded(store, pages_for, provider_for, workers=PARALLEL_JOBS))
+    store.fail_unfinished_jobs()
+
+    def pick_model(model: str | None) -> str:
+        model = model or store.get_setting("default_model", DEFAULT_MODEL)
+        if model not in PROVIDER_MODELS["deepseek"]:
+            raise HTTPException(422, "unknown model %r" % model)
+        return model
+
+    def get_job(job_id: str) -> Job:
+        j = store.get_job(job_id)
+        if j is None:
+            raise HTTPException(404, "job not found")
+        return j
 
     @app.exception_handler(AnkiUnavailable)
     def _anki_down(request: Request, e: AnkiUnavailable):
@@ -187,6 +251,125 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         out = [asdict(results[n.id]) for n in notes]
         summary = {a: sum(r["action"] == a for r in out) for a in ("added", "updated", "skipped", "failed")}
         return {"results": out, "summary": summary}
+
+    # generation
+    @app.post("/api/documents/{doc_id}/generate")
+    def generate(doc_id: str, body: GenerateIn):
+        doc = get_doc(doc_id)
+        model = pick_model(body.model)
+        if body.mode == "selection":
+            sel = body.selection
+            if sel is None or not sel.text.strip():
+                raise HTTPException(422, "select some text first")
+            src = store.add_source(Source(document_id=doc.id, **sel.model_dump()))
+            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode="highlight",
+                                      pages=(sel.page, sel.page), target=sel.text, focus=body.focus,
+                                      model=model))]
+        else:
+            pages = pages_for(doc.id)
+            chunks = chunk_pages(pages)
+            if not chunks:
+                raise HTTPException(422, "No text found in this document (a scan?). Text recognition "
+                                         "for scans comes later.")
+            jobs = []
+            for a, b in chunks:
+                src = store.add_source(Source(document_id=doc.id, kind="chunk", page=a, page_end=b, text=""))
+                jobs.append(runner.submit(Job(document_id=doc.id, source_id=src.id, mode="chunk",
+                                              pages=(a, b), target=document_text(pages, a, b),
+                                              focus=body.focus, model=model)))
+        return {"jobs": [store.get_job(j.id) for j in jobs]}
+
+    @app.get("/api/documents/{doc_id}/estimate")
+    def estimate(doc_id: str, model: str | None = None):
+        """Rough cost of whole-document generation: tokens ≈ characters / 4, the document prefix
+        cached after the first parallel batch, ~3k reasoning tokens per chunk."""
+        get_doc(doc_id)
+        model = pick_model(model)
+        pages = pages_for(doc_id)
+        chunks = chunk_pages(pages)
+        prefix = (len(load_profile().system) + sum(len(p) for p in pages)) // 4
+        hit = miss = out = 0
+        for i, (a, b) in enumerate(chunks):
+            target = sum(len(p) for p in pages[a - 1:b]) // 4
+            if i < PARALLEL_JOBS:
+                miss += prefix + target
+            else:
+                hit, miss = hit + prefix, miss + target
+            out += int(target * 0.8) + 3000
+        now = datetime.now(timezone.utc)
+        usage = Usage(cache_hit=hit, cache_miss=miss, output=out, reasoning=0)
+        return {"chunks": len(chunks), "input_tokens": hit + miss, "output_tokens": out, "model": model,
+                "cost_usd": round(cost(model, usage, now), 4), "peak": is_peak(now)}
+
+    @app.get("/api/documents/{doc_id}/jobs")
+    def list_jobs(doc_id: str) -> list[Job]:
+        get_doc(doc_id)
+        return store.list_jobs(doc_id)
+
+    @app.get("/api/jobs/{job_id}")
+    def job(job_id: str) -> Job:
+        return get_job(job_id)
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str) -> Job:
+        get_job(job_id)
+        return runner.cancel(job_id)
+
+    def resubmit(j: Job, **update) -> Job:
+        fields = j.model_dump(include={"document_id", "source_id", "mode", "pages", "target", "focus",
+                                       "profile", "model"})
+        new = runner.submit(Job(**{**fields, **update}))
+        return store.get_job(new.id)
+
+    @app.post("/api/jobs/{job_id}/retry")
+    def retry_job(job_id: str, body: RetryIn | None = None) -> Job:
+        j = get_job(job_id)
+        return resubmit(j, model=pick_model((body and body.model) or j.model))
+
+    @app.post("/api/jobs/{job_id}/left-out/{index}")
+    def card_left_out(job_id: str, index: int) -> Job:
+        j = get_job(job_id)
+        if not 0 <= index < len(j.left_out):
+            raise HTTPException(404, "no such left-out item")
+        return resubmit(j, mode="highlight", target=j.left_out[index]["text"], focus=LEFT_OUT_FOCUS)
+
+    # settings
+    def settings():
+        return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"],
+                                           "key": keystore.key_status("deepseek")}},
+                "default_model": store.get_setting("default_model", DEFAULT_MODEL)}
+
+    @app.get("/api/settings")
+    def get_settings():
+        return settings()
+
+    @app.put("/api/settings")
+    def put_settings(body: SettingsIn):
+        if body.default_model is not None:
+            store.set_setting("default_model", pick_model(body.default_model))
+        return settings()
+
+    @app.put("/api/settings/keys/{provider}")
+    def put_key(provider: str, body: KeyIn):
+        try:
+            keystore.set_key(provider, body.key)
+        except keystore.KeyStoreError as e:
+            raise HTTPException(422, str(e))
+        return keystore.key_status(provider)
+
+    @app.delete("/api/settings/keys/{provider}")
+    def delete_key(provider: str):
+        keystore.delete_key(provider)
+        return keystore.key_status(provider)
+
+    @app.post("/api/settings/keys/{provider}/test")
+    def test_key(provider: str):
+        keystore.key_status(provider)  # validates the provider name
+        try:
+            provider_for().check()
+        except LLMError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "error": None}
 
     @app.get("/api/anki/status")
     def anki_status():

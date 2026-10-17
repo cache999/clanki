@@ -12,7 +12,8 @@ Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_
 | Anki delivery | AnkiConnect is primary: send, update, read note types, duplicate checks, facet vocabulary. A `.txt` export is the fallback. |
 | Basic explanations | 4th field `Why` on `Basic (optional reversed card)` (added), shown on both answer sides. |
 | Reverse cards | When Add Reverse is on, the Back must also carry a prompt that recovers the Front, written into the Back text: `Paris<br>(r: what country has this capital?)`. Stored as its own field in clanki and joined into Back on send/export. |
-| LLM | Provider abstraction with Claude (Anthropic API key) and DeepSeek. Pick the default after a side-by-side test (milestone 3). |
+| LLM | DeepSeek first (decided 2026-10-17): `deepseek-flash` by default, `deepseek-v4-pro` selectable, through its OpenAI-compatible API. The provider layer stays pluggable; a Claude provider is future work. |
+| API keys | Environment variable first (`DEEPSEEK_API_KEY`, later `ANTHROPIC_API_KEY`; in WSL from `~/.config/clanki/env`), then the OS credential store (Windows Credential Manager via `keyring`), entered in a Settings dialog that never shows the key back. |
 
 ## Your Anki setup (read from the collection, read-only)
 
@@ -25,13 +26,13 @@ Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_
 ## Architecture
 
 ```
-Browser (React + TS, PDF.js) ──HTTP/SSE──▶ FastAPI (Python, uv) ──▶ SQLite (data dir)
-                                              ├─▶ LLM providers: Anthropic SDK | DeepSeek
+Browser (React + TS, PDF.js) ──HTTP────▶ FastAPI (Python, uv) ──▶ SQLite (data dir)
+                                              ├─▶ LLM provider: DeepSeek (Claude later)
                                               ├─▶ LibreOffice (PPTX/DOCX → PDF)
                                               └─▶ AnkiConnect  http://127.0.0.1:8765
 ```
 
-- **Backend**: Python ≥3.12 managed by `uv`, with FastAPI and Uvicorn. SQLite through `sqlite3` with a thin repository layer. Background jobs run as an asyncio queue (default concurrency 3) and push progress to the UI over Server-Sent Events.
+- **Backend**: Python ≥3.12 managed by `uv`, with FastAPI and Uvicorn. SQLite through `sqlite3` with a thin repository layer. Background jobs run on a thread pool (default concurrency 3); the UI polls job status once a second while jobs are active (simpler than Server-Sent Events and fast enough locally).
 - **Frontend**: React, TypeScript and Vite, with `pdfjs-dist` for the viewer and its text layer. The built UI (`src/clanki/static/`) is committed, so other PCs need only `uv` and Git (plus LibreOffice for PPTX/DOCX), not Node.
 - **Install on a PC**: install uv and Git, clone the repo, double-click `clanki.bat` (runs `uv run clanki` and opens the browser); `update.bat` pulls updates. See `README.md`.
 - **Config and data**: stored in `%APPDATA%\clanki` (via `platformdirs`), holding `config.toml` (API keys, default model, port, data dir) and `clanki.db` plus the uploaded files. The data dir can be pointed at OneDrive to share state between PCs, but then use only one PC at a time.
@@ -64,7 +65,9 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | Key | Action |
 |---|---|
 | `N` / `L` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
-| `G` | Generate from the selection (milestone 2: opens the focus box; Enter with it empty runs unconditioned generation) |
+| `G` | Generate from the selection: opens the focus box; Enter with it empty runs unconditioned generation |
+| `Shift+G` | Generate for the whole document, after a cost estimate |
+| `.` / `,` | Jobs panel / Settings |
 | `J` `K` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
 | `E` / `Enter` | Edit; `Ctrl+Enter` saves, `Esc` cancels |
 | `X` / `Z` | Delete / undo |
@@ -74,11 +77,9 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | `Shift+E` | Export `.txt` |
 | `O` | Open a document |
 
-Planned with generation (milestone 2): `Shift+G` whole document (cost estimate first), `.` jobs popover.
-
 ## Generation pipeline
 
-**Request layout**, ordered for prompt caching: profile system prompt → facet vocabulary → document text → (uncached) task: the target passage plus the focus text.
+**Request layout**, ordered for prompt caching (DeepSeek caches shared prefixes automatically): profile system prompt → facet vocabulary → document text → (uncached) task: the target passage plus the focus text.
 
 - **Highlight job**: the target is the selected text. The surrounding page text and section headings go in as *context only*. They let the model write context-free prompts (no "this drug"), but it cards only the target.
 - **Whole-document job**: split into chunks of about 4–6 pages, at headings where they can be detected. Each chunk is its own job with the whole document as the cached prefix. Jobs run in parallel and cards appear chunk by chunk. A final deterministic pass flags duplicates across chunks.
@@ -101,8 +102,8 @@ Planned with generation (milestone 2): `Shift+G` whole document (cost estimate f
 }
 ```
 
-- **Claude**: structured outputs (`output_config.format`) with adaptive thinking and configurable effort, using prompt caching on the stable prefix.
-- **DeepSeek**: JSON output mode through its OpenAI-compatible endpoint, validated against the same schema.
+- **DeepSeek**: JSON output mode (`response_format: json_object`, with the schema and an example in the prompt) through its OpenAI-compatible endpoint, thinking on, configurable effort. Cost from the reported cache-hit, cache-miss and output tokens at the peak or off-peak rate in force.
+- **Claude (future work)**: structured outputs (`output_config.format`) with adaptive thinking and prompt caching on the stable prefix, validated against the same schema.
 - **Deterministic validators** (ported from `build_anki_import.py`; results show as ⚠ on cards):
   - Two cards share a Back (the reverse card would be ambiguous).
   - A list has fewer than 2 or more than 20 items (warn above 8), or an item contains `::` `{{` `}}`.
@@ -196,12 +197,13 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - Validators, `.txt` export, AnkiConnect send.
 
    This is already useful as a faster manual workflow.
-2. **LLM generation**:
-   - Provider layer (Claude and DeepSeek), `medical_ukmla` prompt, schema.
-   - Job queue with SSE and the jobs indicator.
+2. **LLM generation: done 2026-10-17** (DeepSeek; first live results on the vision handout: 7 cards from one page in 19 s for $0.006 uncached):
+   - Provider layer with DeepSeek, `medical_ukmla` prompt, schema.
+   - API keys: environment variable or Settings dialog (credential store).
+   - Job queue with polling and the jobs indicator.
    - Highlight anchoring, focus conditioning, whole-document chunking.
    - Cost display.
-3. **Quality loop**: build an eval from 2–3 of your real handouts plus cards you'd accept. Compare Opus 5.5, Sonnet 5.5, DeepSeek V4 Pro and DeepSeek Flash side by side, and pick defaults per mode (e.g. a cheap model for the whole-document first pass, a stronger one for highlights).
+3. **Quality loop**: build an eval from 2–3 of your real handouts plus cards you'd accept. Compare DeepSeek Flash and V4 Pro side by side (Claude models once that provider exists), and pick defaults per mode (e.g. a cheap model for the whole-document first pass, a stronger one for highlights).
 4. **Anki-aware**: facet vocabulary, duplicate warnings, coverage view.
 5. **OCR and web**:
    - Drag a region on a page, or paste a screenshot.
@@ -244,8 +246,9 @@ The `Why` field is set up on both card templates as `{{#Why}}<hr><div class=why>
 
   A single highlight costs cents or less.
 
-## Open items (not blocking milestone 1)
+## Open items
 
+- Claude provider (Anthropic API): deferred to future work on 2026-10-17; testing uses DeepSeek.
 - Default model: decided in milestone 3.
 - Sharing data between PCs: per-PC by default; OneDrive data dir is optional.
 - Whole-list card policy: follows your practice (always on). The old skill turned it on only for ordered lists of 5 items or fewer; this is configurable in `profile.toml`.
