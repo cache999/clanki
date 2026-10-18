@@ -97,6 +97,19 @@ def parse_output(text: str) -> GenOutput:
         raise GenerationError("reply does not match the card format: %s: %s" % (where, first["msg"])) from e
 
 
+def note_to_card(n: Note) -> dict:
+    """A note in the reply format, so the model can revise it."""
+    if n.type == "qa":
+        return {"type": "qa", "kind": n.kind, "front": n.front, "back": n.back, "why": n.why,
+                "add_reverse": n.add_reverse, "reverse_prompt": n.reverse_prompt, "facets": n.facets, "flags": []}
+    return {"type": "list", "kind": n.kind, "title": n.title, "items": n.items, "order_principle": "",
+            "remarks": n.why, "mnemonic": n.mnemonic, "full": n.full, "flags": []}
+
+
+def parse_cards(cards: list[dict]) -> GenOutput:
+    return _OUTPUT.validate_python({"cards": cards})
+
+
 _REVERSE_IN_BACK = re.compile(r"\s*(?:<br\s*/?>|\n)?\s*\(r:\s*(.+?)\)\s*$", re.I)
 
 

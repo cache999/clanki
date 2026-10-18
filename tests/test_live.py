@@ -5,7 +5,7 @@ import pytest
 
 from clanki.generation import parse_output
 from clanki.llm import DeepSeek
-from clanki.prompts import build_messages, load_profile
+from clanki.prompts import build_edit_messages, build_messages, load_profile
 
 pytestmark = [pytest.mark.live,
               pytest.mark.skipif(not os.environ.get("DEEPSEEK_API_KEY"), reason="DEEPSEEK_API_KEY not set")]
@@ -37,3 +37,18 @@ def test_flash_returns_usable_cards(deepseek):
     for c in out.cards:
         print(" -", c.type, "|", getattr(c, "front", None) or c.title, "|",
               getattr(c, "back", None) or "; ".join(c.items), "| rev:", getattr(c, "reverse_prompt", ""))
+
+
+def test_flash_edit_follows_the_instruction(deepseek):
+    card = {"type": "qa", "kind": "fact", "front": "Peak absorption wavelength of rhodopsin (value + unit)",
+            "back": "~498 nm", "why": "", "add_reverse": False, "reverse_prompt": "", "facets": ["value"], "flags": []}
+    msgs = build_edit_messages(load_profile(), title="Vision", pages=PAGES, card=card,
+                               source_text="Rhodopsin, the rod visual pigment, absorbs maximally near 498 nm.",
+                               source_pages=(1, 1), instruction="add a reverse card")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    assert r.finish_reason == "stop", r.finish_reason
+    [c] = parse_output(r.text).cards
+    print("\nusage %s, cost $%.5f\n - %s | %s | rev: %s | why: %s" % (
+        r.usage, r.cost_usd, c.front, c.back, c.reverse_prompt, c.why))
+    assert c.type == "qa" and c.add_reverse and c.reverse_prompt.strip()
+    assert "498" in c.back

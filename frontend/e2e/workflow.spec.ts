@@ -188,3 +188,40 @@ test("generate cards with the LLM", async ({ page }) => {
   await page.reload();
   await expect(page.locator("select.model")).toHaveValue("deepseek-v4-pro");
 });
+
+test("ask the AI to change a card, then accept or discard", async ({ page }) => {
+  await page.goto("/");
+  const rho = card(page, "Rhodopsin peak absorption");
+  await rho.click();
+  await expect(rho.locator(".status")).toHaveText("sent");
+
+  // A: say what to change; the suggestion shows the change and waits
+  await page.keyboard.press("a");
+  const ask = rho.locator(".askbox input");
+  await expect(ask).toBeFocused();
+  await ask.fill("shorter front");
+  await page.keyboard.press("Enter");
+  const suggestion = rho.locator(".suggest");
+  await expect(suggestion).toContainText("AI suggestion for “shorter front”");
+  await expect(suggestion.locator("del")).toHaveText("Rhodopsin peak absorption (value + unit)");
+  await expect(suggestion.locator("ins")).toHaveText("Edited: shorter front");
+  await expect(rho.locator(".front")).toHaveText("Rhodopsin peak absorption (value + unit)");
+
+  // Y accepts: the card changes, and since it is in Anki it is marked for update
+  await page.keyboard.press("y");
+  const edited = card(page, "Edited: shorter front");
+  await expect(edited.locator(".suggest")).toHaveCount(0);
+  await expect(edited.locator(".status")).toHaveText("edited");
+
+  // a split suggestion can be discarded with D
+  await edited.click();
+  await page.keyboard.press("a");
+  await edited.locator(".askbox input").fill("split into two");
+  await page.keyboard.press("Enter");
+  await expect(edited.locator(".suggest")).toContainText("splits into 2 cards");
+  await expect(edited.locator(".newcard")).toContainText("Second card");
+  await page.keyboard.press("d");
+  await expect(edited.locator(".suggest")).toHaveCount(0);
+  await expect(card(page, "Second card")).toHaveCount(0);
+  await expect(edited.locator(".front")).toHaveText("Edited: shorter front");
+});

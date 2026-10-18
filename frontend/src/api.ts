@@ -55,16 +55,34 @@ export type Source = {
   rects: number[][];
 };
 
+/** A card in the model's reply format (lists keep their Why in remarks). */
+export type ProposedCard = {
+  type: "qa" | "list";
+  kind?: string;
+  front?: string;
+  back?: string;
+  why?: string;
+  add_reverse?: boolean;
+  reverse_prompt?: string;
+  title?: string;
+  items?: string[];
+  remarks?: string;
+  mnemonic?: string;
+  full?: boolean;
+  flags?: string[];
+};
+
 export type Job = {
   id: string;
   document_id: string;
   source_id: string | null;
-  mode: "highlight" | "chunk";
+  note_id: string | null;
+  mode: "highlight" | "chunk" | "edit";
   pages: [number, number];
   target: string;
   focus: string;
   model: string;
-  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  status: "queued" | "running" | "done" | "failed" | "cancelled" | "applied" | "discarded";
   error: string | null;
   attempts: number;
   usage: { cache_hit: number; cache_miss: number; output: number; reasoning: number };
@@ -73,6 +91,8 @@ export type Job = {
   left_out: { text: string; reason: string }[];
   flags: string[];
   image_occlusion: string[];
+  proposal: ProposedCard[];
+  before: Partial<Note> | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -172,6 +192,9 @@ export const api = {
   cancelJob: (id: string) => call<Job>("POST", `/api/jobs/${id}/cancel`),
   retryJob: (id: string, model?: string) => call<Job>("POST", `/api/jobs/${id}/retry`, { model }),
   cardLeftOut: (id: string, index: number) => call<Job>("POST", `/api/jobs/${id}/left-out/${index}`),
+  aiEdit: (noteId: string, instruction: string) => call<Job>("POST", `/api/notes/${noteId}/ai-edit`, { instruction }),
+  acceptJob: (id: string) => call<{ job: Job; message: string | null }>("POST", `/api/jobs/${id}/accept`),
+  discardJob: (id: string) => call<Job>("POST", `/api/jobs/${id}/discard`),
 
   settings: () => call<Settings>("GET", "/api/settings"),
   putSettings: (s: { default_model: string }) => call<Settings>("PUT", "/api/settings", s),

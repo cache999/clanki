@@ -77,17 +77,20 @@ class Source(BaseModel):
 
 
 class Job(BaseModel):
-    """One generation request to the LLM and what came of it."""
+    """One request to the LLM and what came of it: new cards from a highlight or a chunk, or a
+    suggested revision of one card (mode "edit": focus holds the instruction, target the card
+    as JSON, and the suggestion waits in proposal until accepted or discarded)."""
     id: str | None = None
     document_id: str
     source_id: str | None = None
-    mode: Literal["highlight", "chunk"]
+    note_id: str | None = None
+    mode: Literal["highlight", "chunk", "edit"]
     pages: tuple[int, int]
     target: str
     focus: str = ""
     profile: str = "medical_ukmla"
     model: str = "deepseek-flash"
-    status: Literal["queued", "running", "done", "failed", "cancelled"] = "queued"
+    status: Literal["queued", "running", "done", "failed", "cancelled", "applied", "discarded"] = "queued"
     error: str | None = None
     attempts: int = 0
     usage: dict[str, int] = Field(default_factory=lambda: {"cache_hit": 0, "cache_miss": 0, "output": 0, "reasoning": 0})
@@ -96,6 +99,8 @@ class Job(BaseModel):
     left_out: list[dict] = Field(default_factory=list)
     flags: list[str] = Field(default_factory=list)
     image_occlusion: list[str] = Field(default_factory=list)
+    proposal: list[dict] = Field(default_factory=list)
+    before: dict | None = None
     created_at: str | None = None
     started_at: str | None = None
     finished_at: str | None = None

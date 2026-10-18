@@ -4,7 +4,8 @@ Read lecture slides and handouts, highlight passages, and turn them into Anki ca
 own note types (`Basic (optional reversed card)` with a `Why` field, and `Cloze (overlapping)`).
 See `design_docs/implementation_plan.md` for the design and roadmap.
 
-Milestones 1-2 (now): reader, manual and LLM-generated cards (DeepSeek), send to Anki.
+Milestones 1-2 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a card,
+send to Anki.
 
 ## Set up a Windows PC
 
@@ -44,8 +45,49 @@ Press `?` in the app for all shortcuts. The main loop:
   (one item per bullet or line). `Ctrl+Enter` saves.
 - `J`/`K` move between cards, `E` edits, `R` toggles the reverse card and asks for the reverse
   prompt (sent as `Back<br>(r: prompt)`), `X` deletes, `Z` undoes.
+- `A` asks the AI to change the selected card: type what to change (`shorter front`,
+  `split into two`, `make it a list`) and press Enter. The suggestion appears under the card as a
+  diff; `Y` accepts it, `D` discards it. The card stays as it was until you accept.
 - `S` sends new and edited cards to Anki (edited cards are updated in place). Cards with errors
   stay in clanki until fixed. `Shift+E` exports an import file.
+
+## Run it from WSL
+
+The built UI is committed, so uv is all you need (no npm):
+
+```sh
+cd ~/clanki
+uv sync                         # first time, and after pulling
+uv run clanki --no-browser      # Ctrl+C stops it
+```
+
+Then open http://localhost:8710/ in your Windows browser. Windows forwards `localhost` to WSL, so
+this works in WSL's default (NAT) networking. Files opened with `O` can come from anywhere on
+Windows; they are uploaded to clanki.
+
+- **API key**: set `DEEPSEEK_API_KEY` in the shell that runs clanki. Keep it in
+  `~/.config/clanki/env` (`chmod 600`, lines like `DEEPSEEK_API_KEY=sk-…`) and load it at the top
+  of `~/.bashrc`, above the interactive-only guard:
+
+  ```sh
+  [ -f ~/.config/clanki/env ] && { set -a; . ~/.config/clanki/env; set +a; }
+  ```
+
+  Don't save a key from Settings in WSL: there is no credential store, so it hangs.
+- **Data**: documents, cards and `config.toml` live in `~/.local/share/clanki`, separate from a
+  Windows install's `%APPDATA%\clanki`. Keep them on the Linux side (SQLite on `/mnt/c` is slow).
+- **PPTX/DOCX**: need LibreOffice in WSL (`sudo apt install libreoffice`). PDFs need nothing.
+- **Sending to Anki**: under NAT, `127.0.0.1` inside WSL is not Windows, so clanki can't reach
+  Anki and `S` reports it unavailable. Either export instead (`Shift+E`, then File ▸ Import in
+  Anki; re-importing updates cards rather than duplicating them), or switch WSL to mirrored
+  networking, where `127.0.0.1` is shared: add `networkingMode=mirrored` under `[wsl2]` in
+  `%UserProfile%\.wslconfig` and run `wsl --shutdown` in PowerShell. Mirrored mode applies to all
+  of WSL and has not been tried with clanki yet.
+- **A sandbox that costs nothing**: `uv run python tests/e2e_server.py` runs the whole app at
+  http://localhost:18710/ with a fake LLM, a fake Anki and a throwaway data folder, alongside the
+  real one if you like. The fake LLM makes a card from the first selected line and, for AI edits,
+  sets the Front to `Edited: <your instruction>`. Add `--real-llm` to use DeepSeek with the fake
+  Anki and throwaway data.
 
 ## Development (WSL/Linux or Windows)
 
@@ -59,13 +101,6 @@ npm run build && npm run e2e              # build UI, run browser tests
 npm run dev                               # UI dev server on :5173 (run `uv run clanki --no-browser` too)
 uv run python tests/e2e_server.py         # clanki with a fake Anki, a fake LLM and throwaway data
 uv run python tests/e2e_server.py --real-llm   # same, but real DeepSeek (costs money)
-```
-
-In WSL, keep keys in `~/.config/clanki/env` (`chmod 600`, lines like `DEEPSEEK_API_KEY=sk-…`)
-and load it at the top of `~/.bashrc`, above the interactive-only guard:
-
-```sh
-[ -f ~/.config/clanki/env ] && { set -a; . ~/.config/clanki/env; set +a; }
 ```
 
 The prompt lives in `src/clanki/prompts/medical_ukmla/system.md`.

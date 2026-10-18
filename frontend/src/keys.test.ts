@@ -52,3 +52,11 @@ describe("commandFor", () => {
     expect(new Set(all).size).toBe(all.length);
   });
 });
+
+describe("AI edit keys", () => {
+  it("maps ask, accept and discard", () => {
+    expect(commandFor({ key: "a" }, false)).toBe("aiEdit");
+    expect(commandFor({ key: "y" }, false)).toBe("acceptSuggestion");
+    expect(commandFor({ key: "d" }, false)).toBe("discardSuggestion");
+  });
+});

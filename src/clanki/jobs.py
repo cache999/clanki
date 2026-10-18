@@ -1,14 +1,16 @@
 """Generation jobs: build the prompt, call the model, turn the reply into cards."""
+import json
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable
 
+from .doctext import document_text
 from .generation import GenerationError, GenOutput, parse_output, to_notes
 from .llm import LLMError
 from .models import Job
-from .prompts import build_messages, load_profile
+from .prompts import build_edit_messages, build_messages, load_profile
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -68,12 +70,16 @@ class JobRunner:
         spent = {"usage": usage, "cost_usd": 0.0, "attempts": 0}
         try:
             doc = self.store.get_document(job.document_id)
-            messages = build_messages(load_profile(job.profile), title=doc.title, pages=self.pages_for(doc.id),
-                                      target=job.target, target_pages=job.pages, focus=job.focus, mode=job.mode)
+            messages = self._messages(job, doc.title, self.pages_for(doc.id))
             provider = self.provider_for()
             out = self._complete(provider, messages, job.model, spent)
             if self.store.get_job(job_id).status == "cancelled":
                 return self._finish(job_id, **spent)
+            if job.mode == "edit":
+                if not out.cards:
+                    raise GenerationError("the model returned no card")
+                return self._finish(job_id, status="done", proposal=[c.model_dump() for c in out.cards],
+                                    flags=out.flags, **spent)
             notes = [self.store.add_note(n) for n in to_notes(out, doc.id, job.source_id)]
             self._finish(job_id, status="done", note_ids=[n.id for n in notes],
                          left_out=[x.model_dump() for x in out.left_out], flags=out.flags,
@@ -83,6 +89,20 @@ class JobRunner:
         except Exception as e:  # keep the queue alive; the job shows what went wrong
             log.exception("job %s crashed", job_id)
             self._finish(job_id, status="failed", error="internal error: %s" % e, **spent)
+
+    def _messages(self, job: Job, title: str, pages: list[str]) -> list[dict]:
+        profile = load_profile(job.profile)
+        if job.mode != "edit":
+            return build_messages(profile, title=title, pages=pages, target=job.target,
+                                  target_pages=job.pages, focus=job.focus, mode=job.mode)
+        src = self.store.get_source(job.source_id) if job.source_id else None
+        source_text = ""
+        if src and src.kind == "highlight":
+            source_text = src.text
+        elif src:
+            source_text = document_text(pages, src.page, src.page_end or src.page)
+        return build_edit_messages(profile, title=title, pages=pages, card=json.loads(job.target),
+                                   source_text=source_text, source_pages=job.pages, instruction=job.focus)
 
     def _complete(self, provider, messages: list[dict], model: str, spent: dict) -> GenOutput:
         error = None

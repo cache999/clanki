@@ -67,6 +67,8 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | `N` / `L` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
 | `G` | Generate from the selection: opens the focus box; Enter with it empty runs unconditioned generation |
 | `Shift+G` | Generate for the whole document, after a cost estimate |
+| `A` | Ask the AI to change the selected card (type what to change); the suggestion shows as a diff |
+| `Y` / `D` | Accept / discard the AI's suggestion on the selected card |
 | `.` / `,` | Jobs panel / Settings |
 | `J` `K` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
 | `E` / `Enter` | Edit; `Ctrl+Enter` saves, `Esc` cancels |
@@ -203,6 +205,7 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - Job queue with polling and the jobs indicator.
    - Highlight anchoring, focus conditioning, whole-document chunking.
    - Cost display.
+   - AI edits: revise one card from an instruction (same cached prefix plus the card and its source). The suggestion waits as a diff until accepted or discarded, and asking again replaces it. Accepting a change to a card already in Anki marks it `edited`. A type change (Q/A ↔ list) on a sent card replaces it, because Anki cannot change a note's type, and tells you to delete the old note in Anki. A split adds the extra cards from the same source. Accept is refused if the card changed after the request.
 3. **Quality loop**: build an eval from 2–3 of your real handouts plus cards you'd accept. Compare DeepSeek Flash and V4 Pro side by side (Claude models once that provider exists), and pick defaults per mode (e.g. a cheap model for the whole-document first pass, a stronger one for highlights).
 4. **Anki-aware**: facet vocabulary, duplicate warnings, coverage view.
 5. **OCR and web**:

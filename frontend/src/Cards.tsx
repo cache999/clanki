@@ -1,6 +1,7 @@
 // Cards pane: the document's cards in reading order, each viewable and editable inline.
 import { useEffect, useRef, useState } from "react";
-import type { Note, NoteDraft } from "./api";
+import type { Job, Note, NoteDraft } from "./api";
+import { cardDiff } from "./jobs";
 import { parseTags, richHtml } from "./text";
 
 export type EditTarget = { id: string; focus?: string; preset?: Partial<Note> };
@@ -19,6 +20,14 @@ type Props = {
   onCreate(fields: NoteDraft): void;
   onShowSource(sourceId: string): void;
   onDismissFlag(noteId: string, flag: string): void;
+  edits: Map<string, Job>; // note id -> its open AI edit
+  askingFor: string | null; // note id whose "what to change" box is open
+  onAsk(noteId: string, instruction: string): void;
+  onCancelAsk(): void;
+  onAccept(job: Job): void;
+  onDiscard(job: Job): void;
+  onRetryEdit(job: Job): void;
+  onCancelJob(job: Job): void;
 };
 
 export function Cards(p: Props) {
@@ -113,6 +122,8 @@ export function Cards(p: Props) {
               </ul>
             )}
             {p.sendErrors[n.id] && <div className="send-error">Anki: {p.sendErrors[n.id]}</div>}
+            {!editing && p.askingFor === n.id && <AskBox onSubmit={(t) => p.onAsk(n.id, t)} onCancel={p.onCancelAsk} />}
+            {!editing && p.edits.has(n.id) && <Suggestion note={n} job={p.edits.get(n.id)!} {...p} />}
           </div>
         );
       })}
@@ -123,6 +134,86 @@ export function Cards(p: Props) {
         </p>
       )}
     </aside>
+  );
+}
+
+function AskBox(p: { onSubmit(instruction: string): void; onCancel(): void }) {
+  const [v, setV] = useState("");
+  return (
+    <div className="askbox" onClick={(e) => e.stopPropagation()}>
+      Ask the AI to change this card:
+      <input
+        autoFocus
+        value={v}
+        placeholder="e.g. shorter front · split into two · add a reverse card (Enter, Esc to cancel)"
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && v.trim()) p.onSubmit(v.trim());
+          if (e.key === "Escape") p.onCancel();
+        }}
+      />
+    </div>
+  );
+}
+
+function Suggestion(p: { note: Note; job: Job } & Pick<Props, "onAccept" | "onDiscard" | "onRetryEdit" | "onCancelJob">) {
+  const { job, note } = p;
+  const stop = (f: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    f();
+  };
+  if (job.status === "queued" || job.status === "running")
+    return (
+      <div className="suggest pending">
+        ✎ AI is revising: “{job.focus}”… <button onClick={stop(() => p.onCancelJob(job))}>Cancel</button>
+      </div>
+    );
+  if (job.status === "failed")
+    return (
+      <div className="suggest failed">
+        AI edit failed: {job.error} <button onClick={stop(() => p.onRetryEdit(job))}>Retry</button>{" "}
+        <button onClick={stop(() => p.onDiscard(job))}>Dismiss</button>
+      </div>
+    );
+  const [first, ...rest] = job.proposal;
+  const diff = cardDiff(note, first);
+  return (
+    <div className="suggest" onClick={(e) => e.stopPropagation()}>
+      <div className="suggest-head">
+        AI suggestion for “{job.focus}”{rest.length ? ` (splits into ${job.proposal.length} cards)` : ""}
+      </div>
+      {diff.length ? (
+        <table className="diff">
+          <tbody>
+            {diff.map((d) => (
+              <tr key={d.label}>
+                <th>{d.label}</th>
+                <td>
+                  {d.old && <del>{d.old}</del>} {d.new ? <ins>{d.new}</ins> : <i className="muted">(empty)</i>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="muted">No change to this card.</div>
+      )}
+      {rest.map((c, i) => (
+        <div key={i} className="newcard">
+          + new card: <b>{c.type === "qa" ? c.front : c.title}</b> → {c.type === "qa" ? c.back : (c.items ?? []).join("; ")}
+        </div>
+      ))}
+      {[...(first.flags ?? []), ...job.flags].map((f, i) => (
+        <div key={i} className="job-flag">
+          ⚠ {f}
+        </div>
+      ))}
+      <div className="suggest-actions">
+        <button onClick={() => p.onAccept(job)}>Accept</button> <kbd>Y</kbd>
+        <button onClick={() => p.onDiscard(job)}>Discard</button> <kbd>D</kbd>
+      </div>
+    </div>
   );
 }
 

@@ -5,6 +5,9 @@ export type Command =
   | "newList"
   | "generate"
   | "generateDocument"
+  | "aiEdit"
+  | "acceptSuggestion"
+  | "discardSuggestion"
   | "next"
   | "prev"
   | "edit"
@@ -30,6 +33,9 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "newList", keys: ["l"], help: "New list card (one item per selected line)", group: "Cards" },
   { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty)", group: "Generate" },
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
+  { command: "aiEdit", keys: ["a"], help: "Ask the AI to change the selected card (say what to change)", group: "Generate" },
+  { command: "acceptSuggestion", keys: ["y"], help: "Accept the AI's suggestion for the selected card", group: "Generate" },
+  { command: "discardSuggestion", keys: ["d"], help: "Discard the AI's suggestion", group: "Generate" },
   { command: "jobs", keys: ["."], help: "Show generation jobs: cost, errors, left-out content", group: "Generate" },
   { command: "next", keys: ["j", "ArrowDown"], help: "Next card", group: "Cards" },
   { command: "prev", keys: ["k", "ArrowUp"], help: "Previous card", group: "Cards" },

@@ -20,11 +20,12 @@ from .anki_format import export_txt
 from .ankiconnect import AnkiConnect, AnkiUnavailable, SendResult
 from .config import Config
 from .doctext import chunk_pages, document_text, page_texts
+from .generation import GENERATED_TAG, note_to_card, parse_cards, to_notes
 from .jobs import JobRunner
 from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
 from .models import Document, Job, Note, Source
 from .prompts import load_profile
-from .store import Store
+from .store import NOTE_BOOKKEEPING, NOTE_METADATA, Store
 from .validators import validate
 
 STATIC = Path(__file__).parent / "static"
@@ -63,6 +64,27 @@ class GenerateIn(BaseModel):
 
 class RetryIn(BaseModel):
     model: str | None = None
+
+
+class EditIn(BaseModel):
+    instruction: str
+    model: str | None = None
+
+
+def _content(n: Note) -> dict:
+    """What a card says (and would send to Anki), without clanki's bookkeeping."""
+    return n.model_dump(exclude=NOTE_BOOKKEEPING | NOTE_METADATA)
+
+
+def _replacement_patch(n: Note) -> dict:
+    """Fields that make an existing note say what n says (possibly switching its type)."""
+    if n.type == "qa":
+        return {"type": "qa", "front": n.front, "back": n.back, "why": n.why, "add_reverse": n.add_reverse,
+                "reverse_prompt": n.reverse_prompt, "facets": n.facets, "kind": n.kind, "flags": n.flags,
+                "title": "", "items": []}
+    return {"type": "list", "title": n.title, "items": n.items, "why": n.why, "mnemonic": n.mnemonic,
+            "full": n.full, "kind": n.kind, "flags": n.flags, "front": "", "back": "", "add_reverse": False,
+            "reverse_prompt": ""}
 
 
 class SettingsIn(BaseModel):
@@ -324,7 +346,62 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(job_id: str, body: RetryIn | None = None) -> Job:
         j = get_job(job_id)
-        return resubmit(j, model=pick_model((body and body.model) or j.model))
+        model = pick_model((body and body.model) or j.model)
+        if j.mode == "edit":
+            return submit_edit(get_note(j.note_id), j.focus, model)
+        return resubmit(j, model=model)
+
+    # AI edits of one card: a suggestion that waits for accept or discard
+    def submit_edit(n: Note, instruction: str, model: str) -> Job:
+        for old in store.list_jobs(n.document_id):  # a card has at most one open suggestion
+            if old.mode == "edit" and old.note_id == n.id:
+                if old.status in ("queued", "running"):
+                    runner.cancel(old.id)
+                elif old.status in ("done", "failed"):
+                    store.update_job(old.id, status="discarded")
+        src = store.get_source(n.source_id) if n.source_id else None
+        pages = (src.page, src.page_end or src.page) if src else (1, 1)
+        j = runner.submit(Job(document_id=n.document_id, source_id=n.source_id, note_id=n.id, mode="edit",
+                              pages=pages, target=json.dumps(note_to_card(n), ensure_ascii=False),
+                              focus=instruction, model=model, before=n.model_dump()))
+        return store.get_job(j.id)
+
+    @app.post("/api/notes/{note_id}/ai-edit")
+    def ai_edit(note_id: str, body: EditIn) -> Job:
+        n = get_note(note_id)
+        if not body.instruction.strip():
+            raise HTTPException(422, "say what to change")
+        return submit_edit(n, body.instruction.strip(), pick_model(body.model))
+
+    @app.post("/api/jobs/{job_id}/accept")
+    def accept(job_id: str):
+        j = get_job(job_id)
+        if j.mode != "edit" or j.status != "done":
+            raise HTTPException(409, "there is no suggestion to accept")
+        n = store.get_note(j.note_id)
+        if n is None or n.deleted:
+            raise HTTPException(409, "the card was deleted")
+        if _content(n) != _content(Note.model_validate(j.before)):
+            raise HTTPException(409, "The card was changed after the suggestion was requested: discard it, or ask again.")
+        first, *rest = to_notes(parse_cards(j.proposal), n.document_id, n.source_id)
+        message = None
+        if first.type == n.type or n.anki_note_id is None:
+            ids = [store.update_note(n.id, _replacement_patch(first)).id]
+        else:  # Anki cannot change a note's type, so replace the card
+            store.delete_note(n.id)
+            ids = [store.add_note(first.model_copy(update={"tags": n.tags})).id]
+            message = ("The card changed type, so clanki replaced it with a new card. The old card is still "
+                       "in Anki: delete it there.")
+        extra_tags = n.tags + ([GENERATED_TAG] if GENERATED_TAG not in n.tags else [])
+        ids += [store.add_note(x.model_copy(update={"tags": extra_tags})).id for x in rest]
+        return {"job": store.update_job(job_id, status="applied", note_ids=ids), "message": message}
+
+    @app.post("/api/jobs/{job_id}/discard")
+    def discard(job_id: str) -> Job:
+        j = get_job(job_id)
+        if j.mode == "edit" and j.status in ("done", "failed"):
+            return store.update_job(job_id, status="discarded")
+        return j
 
     @app.post("/api/jobs/{job_id}/left-out/{index}")
     def card_left_out(job_id: str, index: int) -> Job:

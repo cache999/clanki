@@ -3,7 +3,7 @@ import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, typ
 import { Cards, type EditTarget } from "./Cards";
 import { DocumentConfirm, FocusBox, JobsPanel, SettingsDialog } from "./Generate";
 import { Help } from "./Help";
-import { jobSummary, money, pagesLabel, sourceStates } from "./jobs";
+import { jobSummary, money, openEdits, pagesLabel, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
 import { Reader, type ReaderHandle, type ReaderSelection } from "./Reader";
 import { joinLines, orderNotes, splitItems } from "./selection";
@@ -48,6 +48,7 @@ export function App() {
   const [docConfirm, setDocConfirm] = useState<Estimate | null>(null);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [askingFor, setAskingFor] = useState<string | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -58,6 +59,7 @@ export function App() {
     [sources],
   );
   const sourceStatus = useMemo(() => sourceStates(jobs), [jobs]);
+  const edits = useMemo(() => openEdits(jobs), [jobs]);
   const summary = jobSummary(jobs);
   const sourcesWithCards = useMemo(() => new Set(notes.map((n) => n.source_id).filter(Boolean) as string[]), [notes]);
   const selected = notes.find((n) => n.id === selectedId) ?? null;
@@ -130,7 +132,7 @@ export function App() {
       if (activeIds.split(",").some((id) => !stillActive.has(id))) {
         await refresh(docId);
         const failed = latest.filter((j) => activeIds.includes(j.id) && j.status === "failed");
-        if (failed.length) say(`Generation failed: ${failed[0].error}`, "error");
+        if (failed.length) say(`${failed[0].mode === "edit" ? "AI edit" : "Generation"} failed: ${failed[0].error}`, "error");
       }
     }, 1000);
     return () => clearInterval(t);
@@ -172,6 +174,23 @@ export function App() {
     if (!r) return;
     say(`Generating ${r.jobs.length} section${r.jobs.length === 1 ? "" : "s"}… (. shows progress)`);
     await reloadJobs();
+  }
+
+  async function askEdit(noteId: string, instruction: string) {
+    setAskingFor(null);
+    if (await guard(api.aiEdit(noteId, instruction))) await reloadJobs();
+  }
+
+  async function accept(job: Job) {
+    const r = await guard(api.acceptJob(job.id));
+    if (!r) return reloadJobs();
+    if (r.message) say(r.message);
+    await reloadJobs();
+    if (r.job.note_ids[0]) setSelectedId(r.job.note_ids[0]);
+  }
+
+  async function discard(job: Job) {
+    if (await guard(api.discardJob(job.id))) await reloadJobs();
   }
 
   async function changeModel(model: string) {
@@ -314,6 +333,16 @@ export function App() {
         return doc ? void confirmDocument() : say("Open a document first (O)");
       case "jobs":
         return setJobsOpen((o) => !o);
+      case "aiEdit":
+        return selected ? setAskingFor(selected.id) : say("Select a card first (J/K)");
+      case "acceptSuggestion": {
+        const j = selected && edits.get(selected.id);
+        return j && j.status === "done" ? void accept(j) : say("No AI suggestion on the selected card");
+      }
+      case "discardSuggestion": {
+        const j = selected && edits.get(selected.id);
+        return j && (j.status === "done" || j.status === "failed") ? void discard(j) : undefined;
+      }
       case "settings":
         return setSettingsOpen(true);
       case "next":
@@ -364,7 +393,7 @@ export function App() {
         return;
       }
       if (help || settingsOpen || docConfirm) return;
-      const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen);
+      const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen || askingFor !== null);
       if (c) {
         e.preventDefault();
         runRef.current(c);
@@ -372,7 +401,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor]);
 
   const pending = notes.filter((n) => n.status !== "sent").length;
   return (
@@ -524,6 +553,14 @@ export function App() {
           onCreate={(f) => void create({ ...f, sel: draft?.sel })}
           onShowSource={(sid) => reader.current?.showSource(sid)}
           onDismissFlag={(id, flag) => void dismissFlag(id, flag)}
+          edits={edits}
+          askingFor={askingFor}
+          onAsk={(id, t) => void askEdit(id, t)}
+          onCancelAsk={() => setAskingFor(null)}
+          onAccept={(j) => void accept(j)}
+          onDiscard={(j) => void discard(j)}
+          onRetryEdit={(j) => void guard(api.retryJob(j.id)).then(reloadJobs)}
+          onCancelJob={(j) => void guard(api.cancelJob(j.id)).then(reloadJobs)}
         />
       </main>
       {jobsOpen && (

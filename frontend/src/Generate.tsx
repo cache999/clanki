@@ -110,7 +110,9 @@ export function JobsPanel(p: {
             <span className="muted">{j.model.replace("deepseek-", "")}</span>
             <span className="muted">{j.status}</span>
             <span className="muted">{duration(j, now)}</span>
-            {j.status === "done" && <span>{j.note_ids.length} cards</span>}
+            {j.mode === "edit" && <span className="muted">edit</span>}
+            {j.status === "done" && j.mode !== "edit" && <span>{j.note_ids.length} cards</span>}
+            {j.status === "done" && j.mode === "edit" && <span>suggestion ready</span>}
             <span className="muted">{money(j.cost_usd)}</span>
             <span className="spacer" />
             {(j.status === "queued" || j.status === "running") && (

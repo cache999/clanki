@@ -34,6 +34,18 @@ class EchoLLM:
 
     def complete(self, messages, *, model, **kw):
         user = messages[-1]["content"]
+        card = re.search(r"<card>\n(.*?)\n</card>", user, re.S)
+        if card:  # an AI edit: echo the instruction into the front; "split" makes two cards
+            c = json.loads(card.group(1))
+            instruction = re.search(r"^Instruction: (.*)$", user, re.M).group(1)
+            if c["type"] == "qa":
+                c["front"] = "Edited: " + instruction
+            else:
+                c["title"] = "Edited: " + instruction
+            cards = [c] + ([{**c, "front": "Second card", "back": "split off"}] if "split" in instruction else [])
+            out = {"cards": cards, "left_out": [], "image_occlusion_candidates": [], "flags": []}
+            return LLMResult(text=json.dumps(out), finish_reason="stop", model=model,
+                             usage=Usage(cache_hit=1000, cache_miss=100, output=100, reasoning=20), cost_usd=0.0001)
         target = re.search(r"<target[^>]*>\n(.*?)\n</target>", user, re.S).group(1)
         focus = re.search(r"^Focus: (.*)$", user, re.M).group(1)
         lines = [l.strip("• ").strip() for l in target.splitlines() if l.strip()]
