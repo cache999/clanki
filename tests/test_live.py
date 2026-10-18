@@ -106,3 +106,12 @@ def test_flash_general_profile(deepseek):
     out = parse_output(r.text)
     _show(r, out)
     assert out.cards and "ukmla" not in r.text.lower()
+
+
+def test_flash_cards_from_an_own_prompt(deepseek):
+    from clanki.prompts import build_prompt_messages
+    msgs = build_prompt_messages(load_profile("medical_ukmla"), request="Frank-Starling law of the heart")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    assert out.cards and not out.left_out

@@ -1,6 +1,6 @@
 // Coverage strip: how much of each page has been carded, for the strip beside the reader.
 
-type SourceLike = { id: string; page: number; page_end: number | null };
+type SourceLike = { id: string; page: number; page_end: number | null; kind?: string };
 type NoteLike = { source_id: string | null };
 export type PageCoverage = { cards: number; state: "pending" | "failed" | "carded" | "empty" };
 
@@ -13,7 +13,8 @@ export function pageCoverage(
   sourceStatus: Map<string, "pending" | "failed">,
 ): PageCoverage[] {
   const pages = Array.from({ length: pageCount }, () => ({ cards: 0, pending: false, failed: false }));
-  const byId = new Map(sources.map((s) => [s.id, s]));
+  // cards from the user's own prompt are filed at a page but are not its content
+  const byId = new Map(sources.filter((s) => s.kind !== "prompt").map((s) => [s.id, s]));
   const span = (s: SourceLike) => {
     const out = [];
     for (let p = s.page; p <= (s.page_end ?? s.page); p++) if (p >= 1 && p <= pageCount) out.push(pages[p - 1]);

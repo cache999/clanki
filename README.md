@@ -50,6 +50,11 @@ Press `?` in the app for all shortcuts. The main loop:
   that, or press Enter for everything UKMLA-relevant. `Shift+G` generates for the whole document
   after showing the estimated cost. `.` shows the jobs: progress, cost, errors, and what was left
   out under the UKMLA scope (with "Card this" to card it anyway).
+- `P` asks for cards on anything, without the document: type a request ("Frank–Starling law",
+  "why ACE inhibitors cause a dry cough"). The model writes them from its own knowledge, with the
+  document's profile, and flags anything it isn't sure of; check those cards. They are filed at the
+  page you're on, labelled "own", and don't count towards that page's coverage. A single fact gets
+  one card; a topic gets its core cards.
 - Screenshots of figures, labelled diagrams or tables:
   - Press `I` and drag a box around one, or paste a screenshot with `Ctrl+V`. It's saved to the
     tray under the reader bar and picked (filled in). Nothing is sent yet.

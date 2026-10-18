@@ -73,7 +73,7 @@ class Source(BaseModel):
     fractions of the page box, so they survive zoom changes."""
     id: str | None = None
     document_id: str
-    kind: Literal["highlight", "chunk", "region", "image"] = "highlight"
+    kind: Literal["highlight", "chunk", "region", "image", "prompt"] = "highlight"  # prompt: the user's own request
     page: int
     page_end: int | None = None
     text: str
@@ -90,7 +90,7 @@ class Job(BaseModel):
     document_id: str
     source_id: str | None = None
     note_id: str | None = None
-    mode: Literal["highlight", "chunk", "edit", "figure", "transcribe"]
+    mode: Literal["highlight", "chunk", "edit", "figure", "transcribe", "prompt"]
     pages: tuple[int, int]
     target: str
     focus: str = ""

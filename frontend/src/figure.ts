@@ -26,7 +26,8 @@ export function renderScale([, , w, h]: number[], pageWidth: number, pageHeight:
 
 export function sourceLabel(s: { kind: string; page: number; page_end: number | null }): string {
   const pages = pagesLabel([s.page, s.page_end ?? s.page]);
-  return s.kind === "region" ? `${pages} figure` : s.kind === "image" ? `${pages} image` : pages;
+  const what = { region: " figure", image: " image", prompt: " own" }[s.kind] ?? "";
+  return pages + what;
 }
 
 /** The transcripts of several screenshots as one text, each labelled with where it came from. */

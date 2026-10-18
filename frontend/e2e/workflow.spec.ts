@@ -441,3 +441,16 @@ test("each document has a profile, and MathJax on cards is rendered", async ({ p
   await page.reload();
   await expect(profile).toHaveValue("ml_papers");
 });
+
+test("cards from your own prompt, without the document", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  await page.keyboard.press("p");
+  const box = page.locator(".promptbox input");
+  await expect(box).toBeFocused();
+  await box.fill("Frank-Starling law");
+  await page.keyboard.press("Enter");
+  const made = card(page, "Prompted: Frank-Starling law");
+  await expect(made).toContainText("own");
+  await expect(page.locator(".promptbox")).toHaveCount(0);
+});

@@ -5,6 +5,7 @@ export type Command =
   | "newList"
   | "generate"
   | "generateDocument"
+  | "promptCards"
   | "figure"
   | "readShots"
   | "rereadShots"
@@ -39,6 +40,7 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "newList", keys: ["l"], help: "New list card (one item per selected line)", group: "Cards" },
   { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty)", group: "Generate" },
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
+  { command: "promptCards", keys: ["p"], help: "Cards on anything you ask for, from the model's own knowledge, without the document (uses the document's profile)", group: "Generate" },
   { command: "figure", keys: ["i"], help: "Screenshot a figure: drag a box around it (or paste one with Ctrl+V); click to pick, Shift+click to add", group: "Generate" },
   { command: "readShots", keys: ["t"], help: "Read the picked screenshots into text (one call each, joined), correct it, then G / N / L", group: "Generate" },
   { command: "rereadShots", keys: ["Shift+t"], help: "Read the picked screenshots again, even if already read", group: "Generate" },

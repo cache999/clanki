@@ -92,10 +92,30 @@ def build_messages(profile: Profile, *, title: str, pages: list[str], target: st
     return [{"role": "system", "content": profile.system}, {"role": "user", "content": user}]
 
 
+def build_prompt_messages(profile: Profile, *, request: str) -> list[dict]:
+    """Cards on whatever the user asks for, from the model's own knowledge: no document."""
+    user = "\n".join([
+        "There is no document this time: while studying, the user asks for cards on a topic of their own. "
+        "Write them from established knowledge, following every rule in the system prompt; where it speaks of "
+        "the document, the source or the target, read the request. Card only what the request asks for, and match "
+        "the amount to it: a single fact gets one card, a topic gets its core cards, not everything known about it. "
+        "Front, Back and list items must be well-established, mainstream facts; flag any card whose content "
+        "you are not certain of rather than guessing.",
+        "<request>",
+        request.strip(),
+        "</request>",
+        "",
+        'Reply with the JSON object described in the system prompt; leave "left_out" and '
+        '"image_occlusion_candidates" empty.',
+    ])
+    return [{"role": "system", "content": profile.system}, {"role": "user", "content": user}]
+
+
 def build_edit_messages(profile: Profile, *, title: str, pages: list[str], card: dict, source_text: str,
                         source_pages: tuple[int, int], instruction: str) -> list[dict]:
-    """Revise one card following the student's instruction, with the same cached prefix."""
-    parts = _document(title, pages, source_pages) + [
+    """Revise one card following the user's instruction, with the same cached prefix (no pages: no
+    document, for a card from the user's own prompt)."""
+    parts = (_document(title, pages, source_pages) if pages else []) + [
         "The student wants to change an existing card. Revise it following their instruction and the "
         "rules in the system prompt. Change only what the instruction asks for, plus anything that breaks "
         "a rule; keep everything else exactly as it is. Usually reply with one card; reply with several "

@@ -41,6 +41,28 @@ export function SnippetBox(p: { label: string; text: string; onUse(text: string)
   );
 }
 
+/** Your own request for cards, written from the model's knowledge with no document context (P).
+ * Enter sends it, Esc cancels. */
+export function PromptBox(p: { onSubmit(prompt: string): void; onCancel(): void }) {
+  const [v, setV] = useState("");
+  return (
+    <span className="focusbox promptbox">
+      Cards from your own prompt (the document is not sent):
+      <input
+        autoFocus
+        value={v}
+        placeholder="e.g. Frank–Starling law · why ACE inhibitors cause a dry cough"
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && v.trim()) p.onSubmit(v.trim());
+          if (e.key === "Escape") p.onCancel();
+        }}
+      />
+    </span>
+  );
+}
+
 /** One-line focus prompt shown in the reader bar after G. Enter generates, Esc cancels. */
 export function FocusBox(p: { pageLabel: string; onSubmit(focus: string): void; onCancel(): void }) {
   const [v, setV] = useState("");

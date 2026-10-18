@@ -25,4 +25,11 @@ describe("pageCoverage", () => {
       { cards: 0, state: "empty" },
     ]);
   });
+
+  it("leaves out cards from the user's own prompt: they are not the document's content", () => {
+    const sources = [{ id: "p1", page: 1, page_end: null, kind: "prompt" }];
+    expect(pageCoverage(1, sources, [{ source_id: "p1" }], new Map([["p1", "pending" as const]]))).toEqual([
+      { cards: 0, state: "empty" },
+    ]);
+  });
 });

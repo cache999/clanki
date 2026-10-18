@@ -66,6 +66,7 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 |---|---|
 | `N` / `L` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
 | `G` | Generate from the selection: opens the focus box; Enter with it empty runs unconditioned generation |
+| `P` | Cards from your own prompt: the model's knowledge, no document context |
 | `Shift+G` | Generate for the whole document, after a cost estimate |
 | `A` | Ask the AI to change the selected card (type what to change); the suggestion shows as a diff |
 | `Y` / `D` | Accept / discard the AI's suggestion on the selected card |
@@ -247,6 +248,10 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
      - Dragging a thumbnail onto a card shows drop targets for its fields (`media.IMAGE_FIELDS`); dropping appends `<img src="clanki-<source id>.<ext>">`.
      - Send copies those images into Anki with `storeMediaFile`. clanki shows them via `/api/media/<name>`, and they are the only images the HTML rules allow.
      - The AI never sees image tags: they are stripped from an AI edit's card and put back into its suggestion. The export dialog says how many cards have images (an import file can't carry them; `.apkg` export is future work).
+   - Own-prompt cards (`P`), added after milestone 6:
+     - The user types a request, and a `prompt` job (`build_prompt_messages`) sends the profile's system prompt and the request, with no document.
+     - The model writes from established knowledge, flags anything uncertain, and matches the amount to the request. A live run turned "Frank-Starling law" into 8 core cards for $0.003.
+     - The request becomes a `prompt` source at the page being read. Its cards are labelled "own" and left out of coverage. AI edits of them leave the document out too.
    - Third-party notice: before the first AI action (generate, whole document, AI edit, reading a figure or screenshot, card-this-anyway, retry), a one-time dialog says what is sent to DeepSeek. It warns against sending others' intellectual property and confidential or patient data. Accepting is stored with the data (`llm_notice_accepted_at`). The dialog, not a button, takes focus, so the Enter that triggered the action can't accept it.
 
 ## Import tests (milestone 0, done)

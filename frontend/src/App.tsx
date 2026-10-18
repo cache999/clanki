@@ -7,6 +7,7 @@ import {
   ExportDialog,
   FocusBox,
   HistoryPanel,
+  PromptBox,
   indexLine,
   JobsPanel,
   LlmNotice,
@@ -64,6 +65,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [askingFor, setAskingFor] = useState<string | null>(null);
   // screenshots: drawing a box, picking some, waiting for their transcripts, then correcting the joined text
+  const [promptOpen, setPromptOpen] = useState(false); // the own-prompt box (P)
   const [regionMode, setRegionMode] = useState(false);
   const [shots, setShots] = useState<string[]>([]); // picked screenshot ids, in picking order
   const [reading, setReading] = useState<{ ids: string[]; jobIds: string[] } | null>(null);
@@ -139,6 +141,7 @@ export function App() {
     setJobs([]);
     setFocusOpen(false);
     setRegionMode(false);
+    setPromptOpen(false);
     setShots([]);
     setReading(null);
     setSnippet(null);
@@ -189,6 +192,15 @@ export function App() {
     if (!r) return;
     setSelection(null);
     reader.current?.clearSelection();
+    await reloadJobs();
+  }
+
+  async function generatePrompt(prompt: string) {
+    if (!doc) return;
+    setPromptOpen(false);
+    const r = await guard(api.generate(doc.id, { mode: "prompt", prompt, page: reader.current?.currentPage() ?? 1 }));
+    if (!r) return;
+    say(`Writing cards on “${prompt.length > 40 ? prompt.slice(0, 40) + "…" : prompt}”…`);
     await reloadJobs();
   }
 
@@ -470,6 +482,8 @@ export function App() {
         return setFocusOpen(true);
       case "generateDocument":
         return doc ? void confirmDocument() : say("Open a document first (O)");
+      case "promptCards":
+        return doc ? setPromptOpen(true) : say("Open a document first (O)");
       case "readShots":
         return readShots(false);
       case "rereadShots":
@@ -698,6 +712,8 @@ export function App() {
                   onSubmit={(f) => llm(() => void generateSelection(f))}
                   onCancel={() => setFocusOpen(false)}
                 />
+              ) : promptOpen ? (
+                <PromptBox onSubmit={(t) => llm(() => void generatePrompt(t))} onCancel={() => setPromptOpen(false)} />
               ) : snippet ? (
                 <SnippetBox
                   key={snippet.sources.map((x) => x.id).join()}

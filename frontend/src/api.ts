@@ -144,7 +144,9 @@ export type SettingsPatch = Partial<{
 }>;
 
 export type GenerateBody = {
-  mode: "selection" | "document";
+  mode: "selection" | "document" | "prompt"; // prompt: cards on the user's own request, no document
+  prompt?: string;
+  page?: number; // the page being read, where cards from a prompt are filed
   selection?: Pick<Source, "page" | "text" | "rects">;
   source_ids?: string[]; // generate from these screenshots (cards attach to the first), with the selection's text
   focus?: string;

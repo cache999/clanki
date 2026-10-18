@@ -63,7 +63,9 @@ class SourceIn(BaseModel):
 
 
 class GenerateIn(BaseModel):
-    mode: Literal["selection", "document"]
+    mode: Literal["selection", "document", "prompt"]  # prompt: cards on the user's own request, no document
+    prompt: str = ""
+    page: int = 1  # the page being read, where cards from a prompt are filed
     selection: SourceIn | None = None
     # generate from these screenshots (cards attach to the first), with the selection's text; one
     # screenshot's text is replaced by the selection, as corrected
@@ -557,7 +559,13 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def generate(doc_id: str, body: GenerateIn):
         doc = get_doc(doc_id)
         model = pick_model(body.model)
-        if body.mode == "selection":
+        if body.mode == "prompt":
+            if not body.prompt.strip():
+                raise HTTPException(422, "say what the cards should be about")
+            src = store.add_source(Source(document_id=doc.id, kind="prompt", page=body.page, text=body.prompt.strip()))
+            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode="prompt", profile=doc.profile,
+                                      pages=(body.page, body.page), target=src.text, model=model))]
+        elif body.mode == "selection":
             sel = body.selection
             if sel is None or not sel.text.strip():
                 raise HTTPException(422, "select some text first")
