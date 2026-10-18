@@ -1,4 +1,5 @@
-"""Generation jobs: build the prompt, call the model, turn the reply into cards."""
+"""LLM jobs: build the prompt, call the model, turn the reply into cards (or a suggestion, or a
+transcription)."""
 import json
 import logging
 import threading
@@ -10,11 +11,12 @@ from .doctext import document_text
 from .generation import GenerationError, GenOutput, parse_output, to_notes
 from .llm import LLMError
 from .models import Job
-from .prompts import build_edit_messages, build_messages, load_profile
+from .prompts import build_edit_messages, build_messages, build_transcribe_messages, load_profile
 from .store import Store
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 2
+MAX_PAGE_CONTEXT = 4000  # characters of the page's text sent with an image
 
 
 def _now() -> str:
@@ -24,15 +26,17 @@ def _now() -> str:
 class JobRunner:
     """Runs jobs on a thread pool (inline when executor=None, for tests). pages_for gives a
     document's page texts; provider_for gives the LLM provider or raises LLMError; facet_counts
-    gives the student's facet usage from Anki, for the prompt's vocabulary."""
+    gives the student's facet usage from Anki, for the prompt's vocabulary; image_for gives a
+    region or image source's picture as a data URL."""
 
     def __init__(self, store: Store, pages_for: Callable[[str], list[str]], provider_for: Callable,
-                 executor=None, facet_counts: Callable[[], dict] = dict):
+                 executor=None, facet_counts: Callable[[], dict] = dict, image_for: Callable | None = None):
         self.store = store
         self.pages_for = pages_for
         self.provider_for = provider_for
         self.executor = executor
         self.facet_counts = facet_counts
+        self.image_for = image_for
         self._lock = threading.Lock()
 
     @classmethod
@@ -72,6 +76,8 @@ class JobRunner:
         spent = {"usage": usage, "cost_usd": 0.0, "attempts": 0}
         try:
             doc = self.store.get_document(job.document_id)
+            if job.mode == "transcribe":
+                return self._transcribe(job, spent)
             messages = self._messages(job, doc.title, self.pages_for(doc.id))
             provider = self.provider_for()
             out = self._complete(provider, messages, job.model, spent)
@@ -99,21 +105,34 @@ class JobRunner:
                                   target_pages=job.pages, focus=job.focus, mode=job.mode)
         src = self.store.get_source(job.source_id) if job.source_id else None
         source_text = ""
-        if src and src.kind == "highlight":
+        if src and src.kind != "chunk":
             source_text = src.text
         elif src:
             source_text = document_text(pages, src.page, src.page_end or src.page)
         return build_edit_messages(profile, title=title, pages=pages, card=json.loads(job.target),
                                    source_text=source_text, source_pages=job.pages, instruction=job.focus)
 
+    def _transcribe(self, job: Job, spent: dict) -> None:
+        """Read the source's image into its text."""
+        src = self.store.get_source(job.source_id)
+        pages = self.pages_for(job.document_id)
+        page = pages[src.page - 1] if 0 < src.page <= len(pages) else ""
+        messages = build_transcribe_messages(load_profile(job.profile), image=self.image_for(src),
+                                             page_text=page[:MAX_PAGE_CONTEXT])
+        r = self.provider_for().complete(messages, model=job.model, json_mode=False)
+        _spend(spent, r)
+        if self.store.get_job(job.id).status == "cancelled":
+            return self._finish(job.id, **spent)
+        if not r.text.strip():
+            raise GenerationError("the model returned no text for the image")
+        self.store.set_source_text(src.id, r.text.strip())
+        self._finish(job.id, status="done", **spent)
+
     def _complete(self, provider, messages: list[dict], model: str, spent: dict) -> GenOutput:
         error = None
         for _ in range(MAX_ATTEMPTS):
             r = provider.complete(messages, model=model)
-            spent["attempts"] += 1
-            spent["cost_usd"] += r.cost_usd
-            for k in spent["usage"]:
-                spent["usage"][k] += getattr(r.usage, k)
+            _spend(spent, r)
             if r.finish_reason == "length":
                 error = GenerationError("the reply was cut off: select a shorter passage")
                 retry = "Your reply was cut off. Reply again, more concisely, with only the JSON object."
@@ -125,3 +144,10 @@ class JobRunner:
                     retry = "That reply could not be used: %s. Reply again with only the JSON object." % e
             messages = messages + [{"role": "assistant", "content": r.text}, {"role": "user", "content": retry}]
         raise error
+
+
+def _spend(spent: dict, r) -> None:
+    spent["attempts"] += 1
+    spent["cost_usd"] += r.cost_usd
+    for k in spent["usage"]:
+        spent["usage"][k] += getattr(r.usage, k)

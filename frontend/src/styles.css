@@ -109,6 +109,15 @@ kbd {
 .clanki-hl .hl { position: absolute; background: var(--hl); mix-blend-mode: multiply; border-radius: 2px; }
 .clanki-hl .hl.has-cards { background: var(--hl-cards); }
 .clanki-hl .hl.active { background: var(--hl-active); outline: 1px solid var(--accent); }
+/* figures: an outline, so the figure stays readable */
+.clanki-hl .hl.region { background: transparent; outline: 2px dashed var(--warn); mix-blend-mode: normal; }
+.clanki-hl .hl.region.has-cards { outline-color: var(--ok); }
+.clanki-hl .hl.region.active { outline: 2px solid var(--accent); }
+.clanki-hl .hl.region.failed { outline-color: var(--bad); }
+.pdf-container.region-mode, .pdf-container.region-mode .textLayer span { cursor: crosshair; }
+.region-draft { position: absolute; z-index: 3; outline: 2px dashed var(--accent); background: rgba(36, 89, 201, 0.08); pointer-events: none; }
+.snippet { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.snippet textarea { width: 100%; font: inherit; font-size: 13px; resize: vertical; }
 .pdfViewer .page .textLayer { z-index: 2; }
 
 .cards { overflow: auto; border-left: 1px solid var(--border); min-height: 0; padding-bottom: 40vh; }

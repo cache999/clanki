@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
-import { DocumentConfirm, FocusBox, indexLine, JobsPanel, SettingsDialog } from "./Generate";
+import { sourceLabel } from "./figure";
+import { DocumentConfirm, FocusBox, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
 import { Help } from "./Help";
-import { jobSummary, money, openEdits, pagesLabel, sourceStates } from "./jobs";
+import { jobSummary, money, openEdits, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
-import { Reader, type ReaderHandle, type ReaderSelection } from "./Reader";
+import { Reader, type ReaderHandle, type ReaderSelection, type Region } from "./Reader";
 import { joinLines, orderNotes, splitItems } from "./selection";
 import { parseTags } from "./text";
 
@@ -49,13 +50,17 @@ export function App() {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [askingFor, setAskingFor] = useState<string | null>(null);
+  // figures: drawing a box, waiting for the model's transcription, then correcting it
+  const [regionMode, setRegionMode] = useState(false);
+  const [awaiting, setAwaiting] = useState<string | null>(null); // source id being transcribed
+  const [snippet, setSnippet] = useState<Source | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const doc = docs.find((d) => d.id === docId) ?? null;
   const ordered = useMemo(() => orderNotes(notes, sources), [notes, sources]);
   const sourceLabels = useMemo(
-    () => new Map(sources.map((s) => [s.id, pagesLabel([s.page, s.page_end ?? s.page])])),
+    () => new Map(sources.map((s) => [s.id, sourceLabel(s)])),
     [sources],
   );
   const sourceStatus = useMemo(() => sourceStates(jobs), [jobs]);
@@ -113,6 +118,9 @@ export function App() {
     setSendErrors({});
     setJobs([]);
     setFocusOpen(false);
+    setRegionMode(false);
+    setAwaiting(null);
+    setSnippet(null);
     if (docId) {
       remember(docId);
       void guard(refresh(docId));
@@ -132,7 +140,8 @@ export function App() {
       if (activeIds.split(",").some((id) => !stillActive.has(id))) {
         await refresh(docId);
         const failed = latest.filter((j) => activeIds.includes(j.id) && j.status === "failed");
-        if (failed.length) say(`${failed[0].mode === "edit" ? "AI edit" : "Generation"} failed: ${failed[0].error}`, "error");
+        const what = { edit: "AI edit", transcribe: "Reading the image" }[failed[0]?.mode as string] ?? "Generation";
+        if (failed.length) say(`${what} failed: ${failed[0].error}`, "error");
       }
     }, 1000);
     return () => clearInterval(t);
@@ -152,6 +161,7 @@ export function App() {
       api.generate(doc.id, {
         mode: "selection",
         selection: { page: selection.page, text: selection.text, rects: selection.rects },
+        source_id: selection.sourceId,
         focus,
       }),
     );
@@ -193,6 +203,55 @@ export function App() {
     if (await guard(api.discardJob(job.id))) await reloadJobs();
   }
 
+  async function transcribe(page: number, rect: number[] | null, image: string) {
+    if (!doc) return say("Open a document first (O)");
+    const r = await guard(api.transcribe(doc.id, { page, rect, image }));
+    if (!r) return;
+    setAwaiting(r.source.id);
+    setSelection(null);
+    say("Reading the image…");
+    await refresh(doc.id);
+    await reloadJobs();
+  }
+
+  // when the transcription arrives, open it for correcting
+  useEffect(() => {
+    if (!awaiting) return;
+    const j = jobs.find((x) => x.source_id === awaiting && x.mode === "transcribe");
+    const s = sources.find((x) => x.id === awaiting);
+    if (j && ["failed", "cancelled"].includes(j.status)) setAwaiting(null);
+    else if (j?.status === "done" && s?.text) {
+      setAwaiting(null);
+      setSnippet(s);
+    }
+  }, [awaiting, jobs, sources]);
+
+  async function cardSnippet(text: string) {
+    const s = snippet;
+    if (!s) return;
+    setSnippet(null);
+    if (text !== s.text && !(await guard(api.correctSource(s.id, text)))) return;
+    if (doc) await refresh(doc.id);
+    setSelection({ page: s.page, text, rects: s.rects, sourceId: s.id });
+  }
+
+  // a pasted screenshot is read like a figure on the page being read
+  const pasteRef = useRef<(e: ClipboardEvent) => void>(() => {});
+  pasteRef.current = (e: ClipboardEvent) => {
+    if (isTyping(e.target)) return;
+    const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+    if (!file) return;
+    e.preventDefault();
+    const fr = new FileReader();
+    fr.onload = () => void transcribe(reader.current?.currentPage() ?? 1, null, String(fr.result));
+    fr.readAsDataURL(file);
+  };
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => pasteRef.current(e);
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   async function changeModel(model: string) {
     const s = await guard(api.putSettings({ default_model: model }));
     if (s) setSettings(s);
@@ -201,6 +260,17 @@ export function App() {
   async function openFile(file: File) {
     setBusy(`Opening ${file.name}…`);
     const d = await guard(api.upload(file));
+    setBusy(null);
+    if (!d) return;
+    setDocs((xs) => [...xs, d]);
+    setDocId(d.id);
+  }
+
+  async function openUrl() {
+    const url = window.prompt("Web page address (its article and figures open as a document):")?.trim();
+    if (!url) return;
+    setBusy("Opening the web page…");
+    const d = await guard(api.openUrl(url.includes("://") ? url : "https://" + url));
     setBusy(null);
     if (!d) return;
     setDocs((xs) => [...xs, d]);
@@ -234,8 +304,8 @@ export function App() {
   async function create(fields: NoteDraft & { sel?: ReaderSelection }) {
     if (!doc) return;
     const { sel, ...note } = fields;
-    let source_id: string | null = null;
-    if (sel) {
+    let source_id: string | null = sel?.sourceId ?? null;
+    if (sel && !sel.sourceId) {
       const s = await guard(api.addSource(doc.id, { page: sel.page, text: sel.text, rects: sel.rects }));
       if (!s) return;
       source_id = s.id;
@@ -331,6 +401,11 @@ export function App() {
         return setFocusOpen(true);
       case "generateDocument":
         return doc ? void confirmDocument() : say("Open a document first (O)");
+      case "figure":
+        if (!doc) return say("Open a document first (O)");
+        setSelection(null);
+        reader.current?.clearSelection();
+        return setRegionMode(true);
       case "jobs":
         return setJobsOpen((o) => !o);
       case "aiEdit":
@@ -374,6 +449,8 @@ export function App() {
         return;
       case "open":
         return fileInput.current?.click();
+      case "openUrl":
+        return void openUrl();
       case "help":
         return setHelp(true);
     }
@@ -386,6 +463,7 @@ export function App() {
       if (e.key === "Escape" && !isTyping(e.target)) {
         if (help) setHelp(false);
         else if (jobsOpen) setJobsOpen(false);
+        else if (regionMode) setRegionMode(false);
         else if (selection) {
           setSelection(null);
           reader.current?.clearSelection();
@@ -401,7 +479,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode]);
 
   const pending = notes.filter((n) => n.status !== "sent").length;
   return (
@@ -426,6 +504,9 @@ export function App() {
         </select>
         <button onClick={() => fileInput.current?.click()} title="Open a PDF, PPTX or DOCX (O)">
           Open…
+        </button>
+        <button onClick={() => void openUrl()} title="Open a web page by its address (Shift+O)">
+          Web page…
         </button>
         <input
           ref={fileInput}
@@ -518,16 +599,31 @@ export function App() {
             bar={
               focusOpen && selection ? (
                 <FocusBox
-                  pageLabel={`p.${selection.page}`}
+                  pageLabel={selection.sourceId ? `the figure on p.${selection.page}` : `p.${selection.page}`}
                   onSubmit={(f) => void generateSelection(f)}
                   onCancel={() => setFocusOpen(false)}
                 />
+              ) : snippet ? (
+                <SnippetBox
+                  key={snippet.id}
+                  label={`Read from the ${snippet.kind === "region" ? "figure" : "image"} on p.${snippet.page}`}
+                  text={snippet.text}
+                  onUse={(t) => void cardSnippet(t)}
+                  onCancel={() => setSnippet(null)}
+                />
               ) : undefined
             }
+            regionMode={regionMode}
+            onRegion={(r: Region) => {
+              setRegionMode(false);
+              void transcribe(r.page, r.rect, r.image);
+            }}
             onSelection={setSelection}
             onSourceClick={(sid) => {
               const n = ordered.find((x) => x.source_id === sid);
+              const s = sources.find((x) => x.id === sid);
               if (n) setSelectedId(n.id);
+              else if (s && s.kind === "region" && s.text) setSnippet(s); // reopen a figure not yet carded
             }}
           />
         ) : (

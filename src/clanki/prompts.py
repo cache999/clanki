@@ -18,6 +18,7 @@ class Profile:
     name: str
     label: str
     system: str
+    transcribe: str = ""  # system prompt for reading an image into text
 
 
 def _meta(name: str) -> dict:
@@ -36,7 +37,9 @@ def load_profile(name: str = DEFAULT_PROFILE, facet_counts: dict | None = None) 
     facets = ", ".join(facet_vocabulary(name, facet_counts))
     system = (PROMPTS / name / "system.md").read_text(encoding="utf-8")
     system = system.replace("{EXAMPLE}", example).replace("{FACETS}", facets).strip()
-    return Profile(name=name, label=_meta(name)["label"], system=system)
+    transcribe = PROMPTS / name / "transcribe.md"
+    return Profile(name=name, label=_meta(name)["label"], system=system,
+                   transcribe=transcribe.read_text(encoding="utf-8").strip() if transcribe.exists() else "")
 
 
 def list_profiles() -> list[Profile]:
@@ -61,8 +64,10 @@ def _document(title: str, pages: list[str], target_pages: tuple[int, int]) -> li
 def build_messages(profile: Profile, *, title: str, pages: list[str], target: str,
                    target_pages: tuple[int, int], focus: str, mode: str) -> list[dict]:
     """System prompt, then one user message: the document first, then the target and focus."""
-    what = ("The target is a whole section of the document: card all of it." if mode == "chunk"
-            else "The target is a passage the student highlighted.")
+    what = {"chunk": "The target is a whole section of the document: card all of it.",
+            "figure": "The target was transcribed from a figure, diagram or image the student selected "
+                      "(labels as \"label: what it points to\", links as \"A → B\"): card what it shows."
+            }.get(mode, "The target is a passage the student highlighted.")
     focus_line = ("Focus: " + focus.strip()) if focus.strip() else \
         "Focus: none (card the testable, UKMLA-relevant content of the target)"
     user = "\n".join(_document(title, pages, target_pages) + [
@@ -96,3 +101,12 @@ def build_edit_messages(profile: Profile, *, title: str, pages: list[str], card:
               'Reply with the JSON object described in the system prompt; leave "left_out" and '
               '"image_occlusion_candidates" empty.']
     return [{"role": "system", "content": profile.system}, {"role": "user", "content": "\n".join(parts)}]
+
+
+def build_transcribe_messages(profile: Profile, *, image: str, page_text: str) -> list[dict]:
+    """Read an image (a data URL) into text; the page's own text helps spell the labels."""
+    context = ("Text on the same page (for spelling only):\n<page>\n%s\n</page>\n\n" % page_text.strip()
+               if page_text.strip() else "")
+    return [{"role": "system", "content": profile.transcribe},
+            {"role": "user", "content": [{"type": "text", "text": context + "Transcribe the image."},
+                                         {"type": "image_url", "image_url": {"url": image}}]}]

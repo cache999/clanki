@@ -3,6 +3,32 @@ import { useEffect, useRef, useState } from "react";
 import { api, type AnkiIndexSummary, type AnkiStatus, type Estimate, type Job, type Settings } from "./api";
 import { jobSummary, money, pagesLabel } from "./jobs";
 
+const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image" };
+
+/** The model's transcription of a figure, for correcting. Ctrl+Enter makes it the selection (then
+ * G / N / L as for selected text); Esc closes. */
+export function SnippetBox(p: { label: string; text: string; onUse(text: string): void; onCancel(): void }) {
+  const [v, setV] = useState(p.text);
+  return (
+    <div className="snippet">
+      <span>
+        {p.label}: correct it if needed, then <kbd>Ctrl+Enter</kbd> to card it · <kbd>Esc</kbd> closes
+      </span>
+      <textarea
+        autoFocus
+        rows={Math.min(12, Math.max(3, v.split("\n").length + 1))}
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && v.trim()) p.onUse(v.trim());
+          if (e.key === "Escape") p.onCancel();
+        }}
+      />
+    </div>
+  );
+}
+
 /** One-line focus prompt shown in the reader bar after G. Enter generates, Esc cancels. */
 export function FocusBox(p: { pageLabel: string; onSubmit(focus: string): void; onCancel(): void }) {
   const [v, setV] = useState("");
@@ -110,9 +136,8 @@ export function JobsPanel(p: {
             <span className="muted">{j.model.replace("deepseek-", "")}</span>
             <span className="muted">{j.status}</span>
             <span className="muted">{duration(j, now)}</span>
-            {j.mode === "edit" && <span className="muted">edit</span>}
-            {j.status === "done" && j.mode !== "edit" && <span>{j.note_ids.length} cards</span>}
-            {j.status === "done" && j.mode === "edit" && <span>suggestion ready</span>}
+            {j.mode !== "highlight" && j.mode !== "chunk" && <span className="muted">{MODE_LABELS[j.mode]}</span>}
+            {j.status === "done" && <span>{j.mode === "edit" ? "suggestion ready" : j.mode === "transcribe" ? "text ready" : `${j.note_ids.length} cards`}</span>}
             <span className="muted">{money(j.cost_usd)}</span>
             <span className="spacer" />
             {(j.status === "queued" || j.status === "running") && (

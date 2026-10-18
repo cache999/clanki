@@ -47,6 +47,16 @@ def test_request_uses_json_mode_thinking_and_effort():
     assert body["max_tokens"] >= 16000
 
 
+def test_plain_text_replies_and_images_for_transcription():
+    p, seen = provider(lambda r: httpx.Response(200, json=deepseek_reply("Median nerve: carpal tunnel")))
+    msgs = [{"role": "user", "content": [{"type": "text", "text": "Transcribe"},
+                                         {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]
+    r = p.complete(msgs, model="deepseek-flash", json_mode=False)
+    body = json.loads(seen[0].content)
+    assert "response_format" not in body and body["messages"] == msgs
+    assert r.text == "Median nerve: carpal tunnel"
+
+
 def test_result_carries_text_usage_and_cost():
     p, _ = provider(lambda r: httpx.Response(200, json=deepseek_reply('{"cards": [1]}')))
     off_peak = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)  # a Saturday

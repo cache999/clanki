@@ -13,6 +13,8 @@ dependencies = [
     "openai>=3.33.0",
     "pypdf>=6.21.1",
     "keyring>=25.7.0",
+    "readability-lxml>=0.9",
+    "fpdf2>=2.8.9",
 ]
 
 [project.scripts]

@@ -56,19 +56,20 @@ class Document(BaseModel):
     id: str
     title: str
     filename: str
-    kind: Literal["pdf", "pptx", "docx"]  # original format; every document is read as PDF
+    kind: Literal["pdf", "pptx", "docx", "web"]  # original format; every document is read as PDF
     deck: str = ""
     tags: list[str] = Field(default_factory=list)
     created_at: str | None = None
 
 
 class Source(BaseModel):
-    """What cards were made from: a highlighted passage, or a page range for whole-document
-    generation. `rects` are [x, y, w, h] as fractions of the page box, so they survive zoom
-    changes."""
+    """What cards were made from: a highlighted passage, a page range for whole-document
+    generation, a box dragged around a figure ("region") or a pasted screenshot ("image"); for
+    the last two, text is the model's transcription of the image. `rects` are [x, y, w, h] as
+    fractions of the page box, so they survive zoom changes."""
     id: str | None = None
     document_id: str
-    kind: Literal["highlight", "chunk"] = "highlight"
+    kind: Literal["highlight", "chunk", "region", "image"] = "highlight"
     page: int
     page_end: int | None = None
     text: str
@@ -77,14 +78,15 @@ class Source(BaseModel):
 
 
 class Job(BaseModel):
-    """One request to the LLM and what came of it: new cards from a highlight or a chunk, or a
-    suggested revision of one card (mode "edit": focus holds the instruction, target the card
-    as JSON, and the suggestion waits in proposal until accepted or discarded)."""
+    """One request to the LLM and what came of it: new cards from a highlight, a chunk or a
+    transcribed figure; a suggested revision of one card (mode "edit": focus holds the
+    instruction, target the card as JSON, and the suggestion waits in proposal until accepted or
+    discarded); or the transcription of a region or image into its source's text ("transcribe")."""
     id: str | None = None
     document_id: str
     source_id: str | None = None
     note_id: str | None = None
-    mode: Literal["highlight", "chunk", "edit"]
+    mode: Literal["highlight", "chunk", "edit", "figure", "transcribe"]
     pages: tuple[int, int]
     target: str
     focus: str = ""

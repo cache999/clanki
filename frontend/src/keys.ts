@@ -5,6 +5,7 @@ export type Command =
   | "newList"
   | "generate"
   | "generateDocument"
+  | "figure"
   | "aiEdit"
   | "acceptSuggestion"
   | "discardSuggestion"
@@ -22,6 +23,7 @@ export type Command =
   | "send"
   | "export"
   | "open"
+  | "openUrl"
   | "jobs"
   | "settings"
   | "help";
@@ -33,6 +35,7 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "newList", keys: ["l"], help: "New list card (one item per selected line)", group: "Cards" },
   { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty)", group: "Generate" },
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
+  { command: "figure", keys: ["i"], help: "Transcribe a figure: drag a box around it (or paste a screenshot with Ctrl+V), correct the text, then G / N / L", group: "Generate" },
   { command: "aiEdit", keys: ["a"], help: "Ask the AI to change the selected card (say what to change)", group: "Generate" },
   { command: "acceptSuggestion", keys: ["y"], help: "Accept the AI's suggestion for the selected card", group: "Generate" },
   { command: "discardSuggestion", keys: ["d"], help: "Discard the AI's suggestion", group: "Generate" },
@@ -51,6 +54,7 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "send", keys: ["s"], help: "Send new and edited cards to Anki", group: "Anki" },
   { command: "export", keys: ["Shift+e"], help: "Export cards as an Anki import file (.txt)", group: "Anki" },
   { command: "open", keys: ["o"], help: "Open a PDF, PPTX or DOCX", group: "App" },
+  { command: "openUrl", keys: ["Shift+o"], help: "Open a web page by its address (its article and figures, as a document)", group: "App" },
   { command: "settings", keys: [","], help: "Settings: API key, default model", group: "App" },
   { command: "help", keys: ["?"], help: "Show shortcuts", group: "App" },
 ];

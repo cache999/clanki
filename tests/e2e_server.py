@@ -23,6 +23,18 @@ from clanki.app import create_app  # noqa: E402
 from clanki.config import Config  # noqa: E402
 
 
+PAGES = {
+    "/article": ("text/html; charset=utf-8", (
+        "<html><head><title>The Median Nerve - TeachMe</title></head><body><nav>Home | Upper limb</nav><article>"
+        "<h1>The Median Nerve</h1><p>The median nerve arises from the lateral and medial cords of the brachial "
+        "plexus and supplies most of the flexors of the forearm.</p><h2>Course</h2><p>It enters the hand through "
+        "the carpal tunnel, deep to the flexor retinaculum, where compression causes carpal tunnel syndrome.</p>"
+        "<figure><img src='/raas.png'><figcaption>Fig 1. A figure.</figcaption></figure></article></body></html>"
+    ).encode()),
+    "/raas.png": ("image/png", (Path(__file__).parent / "fixtures" / "raas.png").read_bytes()),
+}
+
+
 def serve_fake_anki(port: int) -> FakeAnki:
     fake = FakeAnki()
 
@@ -42,8 +54,16 @@ def serve_fake_anki(port: int) -> FakeAnki:
             except Exception as e:
                 self._reply({"result": None, "error": str(e)})
 
-        def do_GET(self):  # test hook: what Anki "contains"
-            self._reply({str(k): v for k, v in fake.notes.items()})
+        def do_GET(self):
+            if self.path in PAGES:  # a web page (and its figure) to open by address
+                ctype, body = PAGES[self.path]
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self._reply({str(k): v for k, v in fake.notes.items()})  # test hook: what Anki "contains"
 
         def log_message(self, *args):
             pass

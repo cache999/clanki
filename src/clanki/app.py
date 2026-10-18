@@ -1,4 +1,5 @@
 """HTTP API for the browser UI, plus the built frontend as static files."""
+import base64
 import re
 import shutil
 import tempfile
@@ -8,6 +9,8 @@ from pathlib import Path
 
 import json
 from datetime import datetime, timezone
+
+import httpx
 from typing import Literal
 
 from fastapi import Body, FastAPI, HTTPException, Request, UploadFile
@@ -15,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import convert
+from . import convert, web
 from . import keys as keystore
 from .anki_format import export_txt
 from .anki_index import AnkiIndex
@@ -61,8 +64,42 @@ class SourceIn(BaseModel):
 class GenerateIn(BaseModel):
     mode: Literal["selection", "document"]
     selection: SourceIn | None = None
+    source_id: str | None = None  # generate from this (region or image) source, with the selection's text
     focus: str = ""
     model: str | None = None
+
+
+class TranscribeIn(BaseModel):
+    page: int
+    rect: list[float] | None = None  # a dragged box; none for a pasted screenshot
+    image: str  # data URL
+    model: str | None = None
+
+
+class SourceTextIn(BaseModel):
+    text: str
+
+
+class UrlIn(BaseModel):
+    url: str
+
+
+IMAGE_TYPES = {b"\x89PNG\r\n\x1a\n": "png", b"\xff\xd8\xff": "jpg", b"GIF8": "gif", b"RIFF": "webp"}
+MAX_IMAGE_BYTES = 20_000_000
+
+
+def decode_image(data_url: str) -> tuple[bytes, str]:
+    """The bytes and file extension of a base64 image data URL, checked by content."""
+    m = re.fullmatch(r"data:image/[\w.+-]+;base64,([A-Za-z0-9+/=\s]+)", data_url)
+    if not m:
+        raise ValueError("send the image as a base64 data URL")
+    data = base64.b64decode(m.group(1))
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError("the image is too large (over 20 MB)")
+    ext = next((e for magic, e in IMAGE_TYPES.items() if data.startswith(magic)), None)
+    if ext is None or (ext == "webp" and data[8:12] != b"WEBP"):
+        raise ValueError("not a PNG, JPEG, GIF or WebP image")
+    return data, ext
 
 
 class RetryIn(BaseModel):
@@ -100,10 +137,11 @@ class KeyIn(BaseModel):
 
 
 def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None = None,
-               provider_for=None, jobs_inline: bool = False) -> FastAPI:
+               provider_for=None, jobs_inline: bool = False, web_client: httpx.Client | None = None) -> FastAPI:
     store = store or Store(cfg.data_dir / "clanki.db")
     anki = anki or AnkiConnect(cfg.anki_url)
     provider_for = provider_for or default_provider
+    web_client = web_client or httpx.Client()
     files = cfg.data_dir / "files"
     app = FastAPI(title="clanki")
 
@@ -133,8 +171,19 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def facet_counts() -> dict:
         return index["now"].facet_counts
 
-    runner = (JobRunner(store, pages_for, provider_for, facet_counts=facet_counts) if jobs_inline
-              else JobRunner.threaded(store, pages_for, provider_for, workers=PARALLEL_JOBS, facet_counts=facet_counts))
+    def image_path(src: Source) -> Path | None:
+        return next((files / src.document_id / "images").glob(src.id + ".*"), None)
+
+    def image_for(src: Source) -> str:
+        p = image_path(src)
+        if p is None:
+            raise ValueError("the image for this source is missing")
+        mime = {"jpg": "jpeg"}.get(p.suffix[1:], p.suffix[1:])
+        return "data:image/%s;base64,%s" % (mime, base64.b64encode(p.read_bytes()).decode())
+
+    jobs_kw = {"facet_counts": facet_counts, "image_for": image_for}
+    runner = (JobRunner(store, pages_for, provider_for, **jobs_kw) if jobs_inline
+              else JobRunner.threaded(store, pages_for, provider_for, workers=PARALLEL_JOBS, **jobs_kw))
     store.fail_unfinished_jobs()
 
     def pick_model(model: str | None) -> str:
@@ -200,6 +249,18 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             shutil.move(str(pdf), files / doc.id / "document.pdf")
         return doc
 
+    @app.post("/api/documents/url")
+    def open_url(body: UrlIn) -> Document:
+        """A web page's article (or a linked PDF), as a document."""
+        try:
+            title, pdf = web.page_to_pdf(body.url.strip(), web_client)
+        except web.WebError as e:
+            raise HTTPException(422, str(e))
+        doc = store.add_document(title=title, filename=body.url.strip(), kind="web")
+        (files / doc.id).mkdir(parents=True)
+        (files / doc.id / "document.pdf").write_bytes(pdf)
+        return doc
+
     @app.get("/api/documents/{doc_id}")
     def document(doc_id: str) -> Document:
         return get_doc(doc_id)
@@ -231,6 +292,33 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def add_source(doc_id: str, body: SourceIn) -> Source:
         get_doc(doc_id)
         return store.add_source(Source(document_id=doc_id, **body.model_dump()))
+
+    def get_source(doc_id: str, source_id: str) -> Source:
+        s = store.get_source(source_id)
+        if s is None or s.document_id != doc_id:
+            raise HTTPException(404, "source not found")
+        return s
+
+    @app.patch("/api/sources/{source_id}")
+    def correct_source(source_id: str, body: SourceTextIn) -> Source:
+        s = store.get_source(source_id)
+        if s is None:
+            raise HTTPException(404, "source not found")
+        return store.set_source_text(source_id, body.text)
+
+    @app.post("/api/documents/{doc_id}/transcribe")
+    def transcribe(doc_id: str, body: TranscribeIn):
+        """Read a dragged box or a pasted screenshot into text (the source's text, when done)."""
+        get_doc(doc_id)
+        data, ext = decode_image(body.image)
+        model = pick_model(body.model)
+        src = store.add_source(Source(document_id=doc_id, kind="region" if body.rect else "image", page=body.page,
+                                      text="", rects=[body.rect] if body.rect else []))
+        (files / doc_id / "images").mkdir(parents=True, exist_ok=True)
+        (files / doc_id / "images" / ("%s.%s" % (src.id, ext))).write_bytes(data)
+        j = runner.submit(Job(document_id=doc_id, source_id=src.id, mode="transcribe",
+                              pages=(body.page, body.page), target="", model=model))
+        return {"job": store.get_job(j.id), "source": store.get_source(src.id)}
 
     # notes
     @app.get("/api/documents/{doc_id}/notes")
@@ -304,9 +392,13 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             sel = body.selection
             if sel is None or not sel.text.strip():
                 raise HTTPException(422, "select some text first")
-            src = store.add_source(Source(document_id=doc.id, **sel.model_dump()))
-            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode="highlight",
-                                      pages=(sel.page, sel.page), target=sel.text, focus=body.focus,
+            if body.source_id:  # a transcribed figure, with the text as the student corrected it
+                src = store.set_source_text(get_source(doc.id, body.source_id).id, sel.text)
+            else:
+                src = store.add_source(Source(document_id=doc.id, **sel.model_dump()))
+            mode = "figure" if src.kind in ("region", "image") else "highlight"
+            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode=mode,
+                                      pages=(src.page, src.page), target=sel.text, focus=body.focus,
                                       model=model))]
         else:
             pages = pages_for(doc.id)

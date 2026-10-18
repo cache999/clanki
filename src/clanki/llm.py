@@ -73,12 +73,15 @@ class DeepSeek:
                 raise LLMError("DeepSeek account balance is insufficient: top up at platform.deepseek.com") from e
             raise LLMError("DeepSeek error %d: %s" % (e.status_code, e.message)) from e
 
-    def complete(self, messages: list[dict], *, model: str, effort: str = "high",
-                 max_tokens: int = 32000, now: datetime | None = None) -> LLMResult:
+    def complete(self, messages: list[dict], *, model: str, effort: str = "high", max_tokens: int = 32000,
+                 now: datetime | None = None, json_mode: bool = True) -> LLMResult:
+        """json_mode=False for a plain-text reply. Message content may include images
+        ({"type": "image_url", ...}); deepseek-flash reads them (at most ~1300×1300 px each)."""
         if model not in DEEPSEEK_PRICES:
             raise LLMError("unknown model %r (choose from %s)" % (model, ", ".join(DEEPSEEK_PRICES)))
+        fmt = {"response_format": {"type": "json_object"}} if json_mode else {}
         r = self._call(lambda: self.client.chat.completions.create(
-            model=model, messages=messages, response_format={"type": "json_object"}, max_tokens=max_tokens,
+            model=model, messages=messages, max_tokens=max_tokens, **fmt,
             extra_body={"thinking": {"type": "enabled"}, "reasoning_effort": effort}))
         u = r.usage
         # DeepSeek's own fields, falling back to the OpenAI-style ones

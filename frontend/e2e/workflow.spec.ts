@@ -260,3 +260,52 @@ test("coverage strip, and warnings for cards already in Anki", async ({ page, re
   await expect(bip.locator(".issues")).toContainText('Already in Anki: "Bipolar cells (function)" → relay photoreceptor signals (Default)');
   await expect(segs.nth(1)).toHaveAttribute("title", /p\.2: \d+ cards/);
 });
+
+test("transcribe a figure by dragging a box, or by pasting a screenshot", async ({ page }) => {
+  await page.goto("/");
+  // I, then drag a box on the page
+  await page.locator(".textLayer span").first().waitFor();
+  await page.keyboard.press("i");
+  await expect(page.locator(".reader-bar")).toContainText("Drag a box");
+  const box = (await page.locator(".page").first().boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.8, { steps: 6 });
+  await page.mouse.up();
+
+  // the model's transcription opens for correction; the box stays marked on the page
+  const snippet = page.locator(".snippet textarea");
+  await expect(snippet).toHaveValue(/Median nerve: carpal tunnel/);
+  await expect(snippet).toBeFocused();
+  await expect(page.locator(".clanki-hl .hl.region")).toHaveCount(1);
+  await snippet.fill("Median nerve: carpal tunnel\nUlnar nerve: Guyon's canal");
+
+  // Ctrl+Enter makes it the selection; G generates cards from it, attached to the figure
+  await page.keyboard.press("Control+Enter");
+  await expect(page.locator(".sel-info")).toContainText("figure on p.1");
+  await page.keyboard.press("g");
+  await page.keyboard.press("Enter");
+  const made = card(page, "Generated: Median nerve: carpal tunnel");
+  await expect(made).toContainText("p.1 figure");
+
+  // a pasted screenshot is read the same way
+  const png = readFileSync(new URL("../../tests/fixtures/raas.png", import.meta.url)).toString("base64");
+  await page.evaluate((b64) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "shot.png", { type: "image/png" }));
+    document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+  }, png);
+  await expect(snippet).toHaveValue(/Ulnar nerve/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".snippet")).toHaveCount(0);
+});
+
+test("open a web page by its address", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  page.once("dialog", (d) => void d.accept(ANKI + "article"));
+  await page.keyboard.press("Shift+O");
+  await expect(page.locator(".textLayer span", { hasText: "carpal tunnel" }).first()).toBeVisible();
+  await expect(page.locator("header select").first()).toHaveValue(/.+/);
+  await expect(page.locator("header select option:checked").first()).toHaveText("The Median Nerve");
+});

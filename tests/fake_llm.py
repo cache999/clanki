@@ -15,7 +15,7 @@ class ScriptedLLM:
         self.calls = []
 
     def complete(self, messages, *, model, **kw):
-        self.calls.append({"messages": messages, "model": model})
+        self.calls.append({"messages": messages, "model": model, "kw": kw})
         if self.on_call:
             self.on_call()
         r = self.replies.pop(0)
@@ -34,6 +34,10 @@ class EchoLLM:
 
     def complete(self, messages, *, model, **kw):
         user = messages[-1]["content"]
+        if isinstance(user, list):  # an image to transcribe
+            text = "Figure: nerve supply\nMedian nerve: carpal tunnel\nUlnar nerve: Guyon's canal\nC5 → C6 → C7"
+            return LLMResult(text=text, finish_reason="stop", model=model,
+                             usage=Usage(cache_hit=0, cache_miss=900, output=60, reasoning=30), cost_usd=0.0003)
         card = re.search(r"<card>\n(.*?)\n</card>", user, re.S)
         if card:  # an AI edit: echo the instruction into the front; "split" makes two cards
             c = json.loads(card.group(1))

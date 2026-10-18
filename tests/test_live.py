@@ -1,11 +1,13 @@
 """Real API calls (cost: a fraction of a cent). Run with: uv run pytest -m live"""
+import base64
 import os
+from pathlib import Path
 
 import pytest
 
 from clanki.generation import parse_output
 from clanki.llm import DeepSeek
-from clanki.prompts import build_edit_messages, build_messages, load_profile
+from clanki.prompts import build_edit_messages, build_messages, build_transcribe_messages, load_profile
 
 pytestmark = [pytest.mark.live,
               pytest.mark.skipif(not os.environ.get("DEEPSEEK_API_KEY"), reason="DEEPSEEK_API_KEY not set")]
@@ -52,3 +54,14 @@ def test_flash_edit_follows_the_instruction(deepseek):
         r.usage, r.cost_usd, c.front, c.back, c.reverse_prompt, c.why))
     assert c.type == "qa" and c.add_reverse and c.reverse_prompt.strip()
     assert "498" in c.back
+
+
+def test_flash_transcribes_a_diagram(deepseek):
+    png = (Path(__file__).parent / "fixtures" / "raas.png").read_bytes()
+    msgs = build_transcribe_messages(load_profile(), image="data:image/png;base64," + base64.b64encode(png).decode(),
+                                     page_text="The renin-angiotensin-aldosterone system regulates blood pressure.")
+    r = deepseek.complete(msgs, model="deepseek-flash", json_mode=False)
+    print("\nusage %s, cost $%.5f\n%s" % (r.usage, r.cost_usd, r.text))
+    assert r.finish_reason == "stop" and r.usage.cache_miss < 3000
+    for s in ("Angiotensinogen", "Angiotensin II", "Aldosterone", "ACE inhibitor", "Renin", "→"):
+        assert s in r.text

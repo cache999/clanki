@@ -48,7 +48,7 @@ export type Doc = {
 export type Source = {
   id: string;
   document_id: string;
-  kind: "highlight" | "chunk";
+  kind: "highlight" | "chunk" | "region" | "image"; // region: a box around a figure; image: a pasted screenshot
   page: number;
   page_end: number | null;
   text: string;
@@ -77,7 +77,7 @@ export type Job = {
   document_id: string;
   source_id: string | null;
   note_id: string | null;
-  mode: "highlight" | "chunk" | "edit";
+  mode: "highlight" | "chunk" | "edit" | "figure" | "transcribe";
   pages: [number, number];
   target: string;
   focus: string;
@@ -118,6 +118,7 @@ export type Settings = {
 export type GenerateBody = {
   mode: "selection" | "document";
   selection?: Pick<Source, "page" | "text" | "rects">;
+  source_id?: string; // generate from this figure source, with the selection's text
   focus?: string;
   model?: string;
 };
@@ -163,6 +164,7 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 
 export const api = {
   documents: () => call<Doc[]>("GET", "/api/documents"),
+  openUrl: (url: string) => call<Doc>("POST", "/api/documents/url", { url }),
   upload: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -186,6 +188,9 @@ export const api = {
 
   ankiStatus: () => call<AnkiStatus>("GET", "/api/anki/status"),
   ankiDecks: () => call<string[]>("GET", "/api/anki/decks"),
+  transcribe: (docId: string, body: { page: number; rect: number[] | null; image: string }) =>
+    call<{ job: Job; source: Source }>("POST", `/api/documents/${docId}/transcribe`, body),
+  correctSource: (id: string, text: string) => call<Source>("PATCH", `/api/sources/${id}`, { text }),
   ankiRefresh: () => call<AnkiIndexSummary>("POST", "/api/anki/refresh"),
   send: (docId: string) => call<SendResponse>("POST", `/api/documents/${docId}/send`),
 

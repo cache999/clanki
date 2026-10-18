@@ -4,8 +4,9 @@ Read lecture slides and handouts, highlight passages, and turn them into Anki ca
 own note types (`Basic (optional reversed card)` with a `Why` field, and `Cloze (overlapping)`).
 See `design_docs/implementation_plan.md` for the design and roadmap.
 
-Milestones 1, 2 and 4 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a
-card, send to Anki, warnings for cards already in Anki, a coverage strip.
+Milestones 1, 2, 4 and 5 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a
+card, send to Anki, warnings for cards already in Anki, a coverage strip, figures and screenshots
+read into text, web pages by address.
 
 ## Set up a Windows PC
 
@@ -41,6 +42,14 @@ Press `?` in the app for all shortcuts. The main loop:
   that, or press Enter for everything UKMLA-relevant. `Shift+G` generates for the whole document
   after showing the estimated cost. `.` shows the jobs: progress, cost, errors, and what was left
   out under the UKMLA scope (with "Card this" to card it anyway).
+- For a figure, labelled diagram or table that is a picture: press `I` and drag a box around it,
+  or paste a screenshot with `Ctrl+V`. deepseek-flash reads it into text (labels as
+  `label: what it points to`, arrows as `A → B`) for about $0.0002. Correct the text, press
+  `Ctrl+Enter`, then `G` / `N` / `L` as for selected text; the cards point back to the figure.
+  For Image Occlusion cards, use Anki's own editor.
+- `Shift+O` (or Web page…) opens a web page by its address: its article and figures become a
+  document like any other. Sites that block apps (e.g. Geeky Medics) or need a login can't be
+  fetched; save the page from the browser instead (`Ctrl+P`, Save as PDF) and open that.
 - Or select text and press `N` for a card (Back is prefilled) or `L` for a list card
   (one item per bullet or line). `Ctrl+Enter` saves.
 - `J`/`K` move between cards, `E` edits, `R` toggles the reverse card and asks for the reverse

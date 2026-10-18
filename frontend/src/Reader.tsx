@@ -6,13 +6,16 @@ import type { PDFViewer as PDFViewerT } from "pdfjs-dist/web/pdf_viewer.mjs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Source } from "./api";
 import { pageCoverage } from "./coverage";
+import { boxFromDrag, renderScale } from "./figure";
 import { hitTest, normaliseRects } from "./selection";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 // The viewer module reads globalThis.pdfjsLib, which the pdfjs-dist import above sets.
 const viewerLib = import("pdfjs-dist/web/pdf_viewer.mjs");
 
-export type ReaderSelection = { page: number; text: string; rects: number[][] };
+/** sourceId: the selection is a transcribed figure (that source), not text selected on the page. */
+export type ReaderSelection = { page: number; text: string; rects: number[][]; sourceId?: string };
+export type Region = { page: number; rect: number[]; image: string };
 
 /** The page's padding box in client coordinates. pdf.js pages have a border, and the
  * highlight layer (like the text layer) is positioned inside it. */
@@ -29,6 +32,7 @@ export type ReaderHandle = {
   zoomFit(): void;
   showSource(sourceId: string): void;
   clearSelection(): void;
+  currentPage(): number;
 };
 
 type Props = {
@@ -42,6 +46,9 @@ type Props = {
   selection: ReaderSelection | null;
   /** Replaces the selection hint in the reader bar (e.g. the generation focus box). */
   bar?: React.ReactNode;
+  /** Dragging draws a box around a figure instead of selecting text. */
+  regionMode: boolean;
+  onRegion(r: Region): void;
   onSelection(sel: ReaderSelection | null): void;
   onSourceClick(sourceId: string): void;
 };
@@ -70,6 +77,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
         r.className =
           "hl" +
           (state ? " " + state : sourcesWithCards.has(s.id) ? " has-cards" : "") +
+          (s.kind === "region" ? " region" : "") +
           (s.id === activeSourceId ? " active" : "");
         Object.assign(r.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
         layer.appendChild(r);
@@ -128,7 +136,49 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
 
   useEffect(redrawAll, [props.sources, props.activeSourceId, props.sourcesWithCards, props.sourceStatus]);
 
+  /** The box rendered at about the resolution the model reads, as a PNG data URL. */
+  async function capture(pageNumber: number, rect: number[]): Promise<string> {
+    const pdfPage = viewerRef.current!.getPageView(pageNumber - 1).pdfPage;
+    const base = pdfPage.getViewport({ scale: 1 });
+    const vp = pdfPage.getViewport({ scale: renderScale(rect, base.width, base.height) });
+    const [x, y, w, h] = rect;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * vp.width));
+    canvas.height = Math.max(1, Math.round(h * vp.height));
+    await pdfPage.render({ canvas, viewport: vp, background: "white", transform: [1, 0, 0, 1, -x * vp.width, -y * vp.height] })
+      .promise;
+    return canvas.toDataURL("image/png");
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    if (!props.regionMode || e.button !== 0) return;
+    const pageDiv = (e.target as HTMLElement).closest(".page") as HTMLElement | null;
+    if (!pageDiv) return;
+    e.preventDefault(); // no text selection while drawing
+    const pageNumber = Number(pageDiv.dataset.pageNumber);
+    const start = { x: e.clientX, y: e.clientY };
+    const draft = document.createElement("div");
+    draft.className = "region-draft";
+    pageDiv.appendChild(draft);
+    const box = () => pageBox(pageDiv);
+    const show = (rect: number[] | null) => {
+      const [x, y, w, h] = rect ?? [0, 0, 0, 0];
+      Object.assign(draft.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
+    };
+    const move = (m: MouseEvent) => show(boxFromDrag(start, { x: m.clientX, y: m.clientY }, box()));
+    const up = (m: MouseEvent) => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      draft.remove();
+      const rect = boxFromDrag(start, { x: m.clientX, y: m.clientY }, box());
+      if (rect) void capture(pageNumber, rect).then((image) => propsRef.current.onRegion({ page: pageNumber, rect, image }));
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
   function onMouseUp(e: React.MouseEvent) {
+    if (props.regionMode) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) {
       // A plain click: select the cards of a highlight under the pointer.
@@ -184,6 +234,9 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     clearSelection() {
       window.getSelection()?.removeAllRanges();
     },
+    currentPage() {
+      return viewerRef.current?.currentPageNumber ?? 1;
+    },
   }));
 
   const coverage = pageCoverage(page.count, props.sources, props.notes, props.sourceStatus);
@@ -196,9 +249,12 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
         </span>
         {props.bar ? (
           props.bar
+        ) : props.regionMode ? (
+          <span className="sel-info">Drag a box around a figure or its labels to transcribe it · Esc cancels</span>
         ) : sel ? (
           <span className="sel-info">
-            Selected on p.{sel.page}: “{sel.text.length > 60 ? sel.text.slice(0, 60) + "…" : sel.text}” —{" "}
+            {sel.sourceId ? "Transcribed figure on" : "Selected on"} p.{sel.page}: “
+            {sel.text.length > 60 ? sel.text.slice(0, 60) + "…" : sel.text}” —{" "}
             <kbd>G</kbd> generate · <kbd>N</kbd> card · <kbd>L</kbd> list · <kbd>Esc</kbd> clear
           </span>
         ) : (
@@ -207,7 +263,12 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
       </div>
       <div className="reader-body">
         {error && <div className="reader-error">Could not open the PDF: {error}</div>}
-        <div ref={containerRef} className="pdf-container" onMouseUp={onMouseUp}>
+        <div
+          ref={containerRef}
+          className={`pdf-container${props.regionMode ? " region-mode" : ""}`}
+          onMouseDown={onMouseDown}
+          onMouseUp={onMouseUp}
+        >
           <div className="pdfViewer" />
         </div>
         <div className="coverage" aria-label="Coverage">

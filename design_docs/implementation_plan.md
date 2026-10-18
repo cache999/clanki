@@ -7,8 +7,8 @@ Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_
 | Topic | Decision |
 |---|---|
 | Where it runs | Locally on each Windows PC that has Anki. Python server on `127.0.0.1`, UI in the browser. No hosting, no login. Developed in WSL, but code must run natively on Windows: `pathlib` only, nothing POSIX-only, no hard-coded paths. |
-| Sources (v1) | PDFs with a text layer. PPTX/DOCX converted to PDF with LibreOffice (`soffice --headless --convert-to pdf`); when LibreOffice is missing, ask the user to "Save as PDF" from Office. |
-| Sources (later) | Screenshots, a dragged region of a page, or scanned PDFs, OCR'd by a vision model. Web pages by URL. |
+| Sources | PDFs with a text layer. PPTX/DOCX converted to PDF with LibreOffice (`soffice --headless --convert-to pdf`); when LibreOffice is missing, ask the user to "Save as PDF" from Office. Figures (a dragged box) and pasted screenshots, read into text by deepseek-flash. Web pages by URL, laid out as PDF (milestone 5). |
+| Sources (later) | Whole scanned PDFs with no text layer. |
 | Anki delivery | AnkiConnect is primary: send, update, read note types, duplicate checks, facet vocabulary. A `.txt` export is the fallback. |
 | Basic explanations | 4th field `Why` on `Basic (optional reversed card)` (added), shown on both answer sides. |
 | Reverse cards | When Add Reverse is on, the Back must also carry a prompt that recovers the Front, written into the Back text: `Paris<br>(r: what country has this capital?)`. Stored as its own field in clanki and joined into Back on send/export. |
@@ -77,7 +77,8 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | `[` `]`, `+` `-` `0` | Previous/next page, zoom, fit width |
 | `S` | Send new and edited cards to Anki |
 | `Shift+E` | Export `.txt` |
-| `O` | Open a document |
+| `O` / `Shift+O` | Open a document / a web page by its address |
+| `I` | Transcribe a figure: drag a box around it (or paste a screenshot with `Ctrl+V`), correct the text, `Ctrl+Enter`, then `G`/`N`/`L` |
 
 ## Generation pipeline
 
@@ -216,10 +217,11 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
      Run against your own collection, 2% of notes match another one in it, mostly identical fronts or a shared facet.
    - Facet vocabulary (`facets.py`): bracketed subquestions are mined from the Basic fronts, and only abbreviations are normalised (`def`, `pathophys`, `desc`), because plurals ask for several answers. The prompt gets the curated list from `profile.toml`, then your most used other facets (at least 5 uses, up to 50 in all, alphabetical so the cached prefix stays stable). Vague ones (`describe`, `overview`, `brief`, …) are excluded. Settings shows the list.
    - Coverage strip beside the reader: one segment per page, green by number of cards (a chunk's cards spread over its pages), amber while generating, red on failure; click to jump.
-5. **OCR and web**:
-   - Drag a region on a page, or paste a screenshot.
-   - A vision model transcribes it into an editable snippet, which is then generated from.
-   - Web pages by URL, using a readability extractor.
+5. **Figures and web: done 2026-10-18** (image cards stay in Anki's own Image Occlusion editor):
+   - `I` and drag a box on a page: pdf.js renders just that box at about 1300×1300 pixels' worth, the most deepseek-flash reads per image (it now accepts images: `deepseek-v4-flash-vision-exp` was folded into V4.1-Flash on 2026-10-17). `Ctrl+V` pastes a screenshot instead. Each is a source (`region` or `image`), and its image is kept in the document's folder, so retry works.
+   - A transcription job (plain text, no JSON mode) uses `prompts/<profile>/transcribe.md`: all text exactly as written, labels as `label: what it points to`, links as `A → B` (inhibition `⊣`), tables as `a | b` rows. The page's own text goes along, to spell labels. A synthetic RAAS diagram came back fully right in 2.7 s for $0.00013, including the label on each arrow and the inhibitor's target.
+   - The transcription opens in an editable box in the reader bar. `Ctrl+Enter` makes it the selection, so `G`/`N`/`L` work as for selected text. Generation uses mode `figure` (the prompt says the target was transcribed from a figure), and the cards attach to the figure's source. The box shows as a dashed outline; clicking an uncarded one reopens its text.
+   - Web pages: httpx with a user agent that names clanki (Wikipedia refuses anonymous clients), then readability-lxml for the article (it kept TeachMeAnatomy's headings and figures, where trafilatura flattened them), then fpdf2 with a bundled DejaVu font (for symbols like Na⁺) for the PDF. Lists, tables as `a | b` rows, figures and captions are kept, and citation markers dropped. A link to a PDF opens that PDF. A refused or login-only page explains how to save it from the browser. LibreOffice isn't used, because its HTML import needs Writer.
 6. **Polish**: `general` profile, settings page, undo history, export filters.
 
 ## Import tests (milestone 0, done)

@@ -106,6 +106,15 @@ class Store:
             row = db.execute("SELECT data FROM sources WHERE id = ?", (source_id,)).fetchone()
         return Source.model_validate_json(row[0]) if row else None
 
+    def set_source_text(self, source_id: str, text: str) -> Source | None:
+        s = self.get_source(source_id)
+        if s is None:
+            return None
+        s = s.model_copy(update={"text": text})
+        with self._db() as db:
+            db.execute("UPDATE sources SET data = ? WHERE id = ?", (s.model_dump_json(), source_id))
+        return s
+
     # jobs
     def _put_job(self, db, j: Job) -> None:
         db.execute("INSERT OR REPLACE INTO jobs VALUES (?, ?, ?, ?)",
