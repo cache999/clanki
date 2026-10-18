@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
-import { DocumentConfirm, FocusBox, JobsPanel, SettingsDialog } from "./Generate";
+import { DocumentConfirm, FocusBox, indexLine, JobsPanel, SettingsDialog } from "./Generate";
 import { Help } from "./Help";
 import { jobSummary, money, openEdits, pagesLabel, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
@@ -513,6 +513,7 @@ export function App() {
             activeSourceId={selected?.source_id ?? null}
             sourcesWithCards={sourcesWithCards}
             sourceStatus={sourceStatus}
+            notes={notes}
             selection={selection}
             bar={
               focusOpen && selection ? (
@@ -576,7 +577,16 @@ export function App() {
         <DocumentConfirm estimate={docConfirm} onSubmit={(f) => void generateDocument(f)} onCancel={() => setDocConfirm(null)} />
       )}
       {settingsOpen && settings && (
-        <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog
+          settings={settings}
+          anki={anki}
+          onChange={setSettings}
+          onAnkiRead={(st) => {
+            setAnki(st);
+            if (docId) void guard(refresh(docId));
+          }}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       {help && <Help onClose={() => setHelp(false)} />}
@@ -624,17 +634,22 @@ function DeckList({ connected }: { connected: boolean }) {
 
 function AnkiPill({ status }: { status: AnkiStatus | null }) {
   if (!status) return <span className="pill bad">Anki ?</span>;
+  const checked = indexLine(status.index);
   if (!status.connected)
     return (
-      <span className="pill bad" title={status.problems.join("\n")}>
+      <span className="pill bad" title={[...status.problems, checked].join("\n")}>
         Anki offline
       </span>
     );
   if (status.problems.length)
     return (
-      <span className="pill warn" title={status.problems.join("\n")}>
+      <span className="pill warn" title={[...status.problems, checked].join("\n")}>
         Anki ⚠ {status.problems.length}
       </span>
     );
-  return <span className="pill ok">Anki ✓</span>;
+  return (
+    <span className="pill ok" title={checked}>
+      Anki ✓
+    </span>
+  );
 }

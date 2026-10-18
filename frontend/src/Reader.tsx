@@ -5,6 +5,7 @@ import "pdfjs-dist/web/pdf_viewer.css";
 import type { PDFViewer as PDFViewerT } from "pdfjs-dist/web/pdf_viewer.mjs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Source } from "./api";
+import { pageCoverage } from "./coverage";
 import { hitTest, normaliseRects } from "./selection";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -36,6 +37,8 @@ type Props = {
   activeSourceId: string | null;
   sourcesWithCards: Set<string>;
   sourceStatus: Map<string, "pending" | "failed">;
+  /** The document's cards, for the coverage strip. */
+  notes: { source_id: string | null }[];
   selection: ReaderSelection | null;
   /** Replaces the selection hint in the reader bar (e.g. the generation focus box). */
   bar?: React.ReactNode;
@@ -183,6 +186,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     },
   }));
 
+  const coverage = pageCoverage(page.count, props.sources, props.notes, props.sourceStatus);
   const sel = props.selection;
   return (
     <section className="reader">
@@ -205,6 +209,19 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
         {error && <div className="reader-error">Could not open the PDF: {error}</div>}
         <div ref={containerRef} className="pdf-container" onMouseUp={onMouseUp}>
           <div className="pdfViewer" />
+        </div>
+        <div className="coverage" aria-label="Coverage">
+          {coverage.map((c, i) => (
+            <div
+              key={i}
+              className={`seg${c.state !== "empty" ? " " + c.state : ""}${i + 1 === page.current ? " current" : ""}`}
+              style={c.state === "carded" ? { opacity: Math.min(1, 0.35 + c.cards / 6) } : undefined}
+              title={`p.${i + 1}: ${Math.round(c.cards)} cards${c.state === "pending" ? ", generating" : c.state === "failed" ? ", generation failed" : ""}`}
+              onClick={() => {
+                if (viewerRef.current) viewerRef.current.currentPageNumber = i + 1;
+              }}
+            />
+          ))}
         </div>
       </div>
     </section>

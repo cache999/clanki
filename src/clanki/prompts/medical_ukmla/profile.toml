@@ -1,1 +1,14 @@
 label = "Medical (UKMLA)"
+
+[facets]
+# The prompt's subquestion vocabulary: this list, then the facets used most in the student's
+# Anki fronts (read through AnkiConnect) up to `size`.
+base = ["definition", "function", "location", "MoA", "origin", "insertion", "innervation", "attachments",
+        "course", "supply", "drains into", "structure", "histology", "pathophysiology", "cause", "causes",
+        "presentation", "symptoms", "investigation", "treatment", "use", "class", "adverse effects",
+        "contraindications", "interactions", "monitoring", "value", "example", "result", "mechanism", "why"]
+# Used in Anki but never suggested: vague prompts, near-copies of a base facet, unclear ones.
+exclude = ["brief", "describe", "overview", "what is", "visualize", "process", "meaning", "disambiguation",
+           "use case", "used for", "rough course", "enemy count"]
+size = 50
+min_count = 5

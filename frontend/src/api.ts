@@ -111,6 +111,8 @@ export type KeyStatus = { set: boolean; source: "env" | "keyring" | null; hint: 
 export type Settings = {
   providers: { deepseek: { models: string[]; key: KeyStatus } };
   default_model: string;
+  /** The subquestion vocabulary the prompt uses: the profile's, plus the student's frequent ones. */
+  facets: string[];
 };
 
 export type GenerateBody = {
@@ -120,7 +122,9 @@ export type GenerateBody = {
   model?: string;
 };
 
-export type AnkiStatus = { connected: boolean; version: number | null; problems: string[] };
+/** index: clanki's snapshot of the Anki collection, used for duplicate warnings. */
+export type AnkiIndexSummary = { notes: number; refreshed_at: string | null };
+export type AnkiStatus = { connected: boolean; version: number | null; problems: string[]; index: AnkiIndexSummary };
 
 export type SendResult = {
   note_id: string;
@@ -182,6 +186,7 @@ export const api = {
 
   ankiStatus: () => call<AnkiStatus>("GET", "/api/anki/status"),
   ankiDecks: () => call<string[]>("GET", "/api/anki/decks"),
+  ankiRefresh: () => call<AnkiIndexSummary>("POST", "/api/anki/refresh"),
   send: (docId: string) => call<SendResponse>("POST", `/api/documents/${docId}/send`),
 
   generate: (docId: string, body: GenerateBody) =>

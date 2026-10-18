@@ -94,7 +94,14 @@ kbd {
 }
 .sel-info { overflow: hidden; text-overflow: ellipsis; }
 .reader-body { position: relative; min-height: 0; background: var(--reader-bg); }
-.pdf-container { position: absolute; inset: 0; overflow: auto; }
+.pdf-container { position: absolute; inset: 0 12px 0 0; overflow: auto; }
+/* coverage strip beside the scrollbar: one segment per page */
+.coverage { position: absolute; top: 0; bottom: 0; right: 0; width: 12px; display: flex; flex-direction: column; gap: 1px; padding: 2px 2px; }
+.coverage .seg { flex: 1; min-height: 2px; border-radius: 2px; background: var(--border); cursor: pointer; }
+.coverage .seg.carded { background: var(--ok); }
+.coverage .seg.pending { background: var(--warn); }
+.coverage .seg.failed { background: var(--bad); }
+.coverage .seg.current { box-shadow: 0 0 0 1.5px var(--text); }
 .reader-error { padding: 16px; color: var(--bad); }
 
 /* highlight overlay, drawn under pdf.js's transparent text layer */

@@ -1,5 +1,6 @@
 """In-memory stand-in for the AnkiConnect add-on, served through httpx.MockTransport."""
 import json
+import re
 
 import httpx
 
@@ -65,6 +66,29 @@ class FakeAnki:
             self.notes[self.next_id] = {k: n[k] for k in ("modelName", "deckName", "fields", "tags")}
             ids.append(self.next_id)
         return ids
+
+    def add(self, model: str, deck: str = "Default", **fields) -> int:
+        """Put a note straight into the collection (as if made in Anki)."""
+        self.decks.add(deck)
+        names = self.models[model]
+        return self.a_addNotes([{"modelName": model, "deckName": deck, "tags": [],
+                                 "fields": {k: fields.get(k.replace(" ", "_"), "") for k in names}}])[0]
+
+    # reads; a note's card ids are id*10 (+1 for a second card)
+    def a_findNotes(self, query):
+        m = re.fullmatch(r'"note:(.+)"', query)
+        return [i for i, n in self.notes.items() if m is None or n["modelName"] == m.group(1)]
+
+    def a_notesInfo(self, notes):
+        return [{"noteId": i, "modelName": self.notes[i]["modelName"], "tags": self.notes[i]["tags"],
+                 "fields": {k: {"value": v, "order": j} for j, (k, v) in enumerate(self.notes[i]["fields"].items())},
+                 "cards": [i * 10]} for i in notes if i in self.notes]
+
+    def a_getDecks(self, cards):
+        out = {}
+        for c in cards:
+            out.setdefault(self.notes[c // 10]["deckName"], []).append(c)
+        return out
 
     def a_updateNoteFields(self, note):
         if note["id"] not in self.notes:

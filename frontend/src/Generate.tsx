@@ -1,6 +1,6 @@
 // Generation UI: focus box, whole-document confirmation, jobs panel, settings dialog.
 import { useEffect, useRef, useState } from "react";
-import { api, type Estimate, type Job, type Settings } from "./api";
+import { api, type AnkiIndexSummary, type AnkiStatus, type Estimate, type Job, type Settings } from "./api";
 import { jobSummary, money, pagesLabel } from "./jobs";
 
 /** One-line focus prompt shown in the reader bar after G. Enter generates, Esc cancels. */
@@ -152,7 +152,20 @@ export function JobsPanel(p: {
   );
 }
 
-export function SettingsDialog(p: { settings: Settings; onChange(s: Settings): void; onClose(): void }) {
+/** What clanki knows of the Anki collection, for duplicate warnings. */
+export function indexLine(index: AnkiIndexSummary | undefined): string {
+  if (!index?.refreshed_at) return "clanki has not read your Anki cards yet: duplicate warnings start once Anki is open.";
+  const when = new Date(index.refreshed_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return `${index.notes.toLocaleString()} cards read from Anki (${when}): new cards are checked against them.`;
+}
+
+export function SettingsDialog(p: {
+  settings: Settings;
+  anki: AnkiStatus | null;
+  onChange(s: Settings): void;
+  onAnkiRead(status: AnkiStatus): void;
+  onClose(): void;
+}) {
   const ds = p.settings.providers.deepseek;
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -229,6 +242,26 @@ export function SettingsDialog(p: { settings: Settings; onChange(s: Settings): v
           ))}
         </select>
         <p className="muted small">deepseek-flash is cheapest; deepseek-v4-pro is stronger and about 4× the price.</p>
+        <h3>Anki</h3>
+        <p>{indexLine(p.anki?.index)}</p>
+        <div className="row">
+          <button
+            onClick={() =>
+              run(async () => {
+                await api.ankiRefresh();
+                p.onAnkiRead(await api.ankiStatus());
+              }, "Read your Anki cards")
+            }
+          >
+            Re-read Anki
+          </button>
+        </div>
+        <h3>Subquestion vocabulary</h3>
+        <p className="facets small">{p.settings.facets.join(", ")}</p>
+        <p className="muted small">
+          The model is asked to use these in brackets, e.g. “Sacubitril (MoA, use)”: clanki’s list, then the ones you
+          use most in Anki.
+        </p>
         <div className="dialog-actions">
           <button onClick={p.onClose}>Close</button> <span className="muted">Esc</span>
         </div>

@@ -4,8 +4,8 @@ Read lecture slides and handouts, highlight passages, and turn them into Anki ca
 own note types (`Basic (optional reversed card)` with a `Why` field, and `Cloze (overlapping)`).
 See `design_docs/implementation_plan.md` for the design and roadmap.
 
-Milestones 1-2 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a card,
-send to Anki.
+Milestones 1, 2 and 4 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a
+card, send to Anki, warnings for cards already in Anki, a coverage strip.
 
 ## Set up a Windows PC
 
@@ -50,6 +50,16 @@ Press `?` in the app for all shortcuts. The main loop:
   diff; `Y` accepts it, `D` discards it. The card stays as it was until you accept.
 - `S` sends new and edited cards to Anki (edited cards are updated in place). Cards with errors
   stay in clanki until fixed. `Shift+E` exports an import file.
+- A card that repeats one already in Anki gets a ⚠ showing that card: the same subject asked about
+  the same subquestion (`Sacubitril (MoA)` when Anki has `Sacubitril (MoA, use) [2]`), regardless
+  of word order. So does a reverse card whose Back a reversed Anki card already has. clanki reads
+  your Anki cards (about a second) when Anki is open and every 10 minutes after; Settings ▸
+  Re-read Anki does it now. The warnings keep working while Anki is closed.
+- The strip beside the reader shows each page's coverage: green has cards (darker is more), amber
+  is generating, red failed. Click it to go to that page.
+- The model is told to use your subquestion words (`MoA`, `function`, `attachments`, …): clanki's
+  list plus the ones you use most in Anki, shown in Settings. Edit `profile.toml` in
+  `src/clanki/prompts/medical_ukmla/` to change the list or exclude words.
 
 ## Run it from WSL
 
@@ -77,12 +87,11 @@ Windows; they are uploaded to clanki.
 - **Data**: documents, cards and `config.toml` live in `~/.local/share/clanki`, separate from a
   Windows install's `%APPDATA%\clanki`. Keep them on the Linux side (SQLite on `/mnt/c` is slow).
 - **PPTX/DOCX**: need LibreOffice in WSL (`sudo apt install libreoffice`). PDFs need nothing.
-- **Sending to Anki**: under NAT, `127.0.0.1` inside WSL is not Windows, so clanki can't reach
-  Anki and `S` reports it unavailable. Either export instead (`Shift+E`, then File ▸ Import in
-  Anki; re-importing updates cards rather than duplicating them), or switch WSL to mirrored
-  networking, where `127.0.0.1` is shared: add `networkingMode=mirrored` under `[wsl2]` in
-  `%UserProfile%\.wslconfig` and run `wsl --shutdown` in PowerShell. Mirrored mode applies to all
-  of WSL and has not been tried with clanki yet.
+- **Sending to Anki** needs WSL's mirrored networking, where `127.0.0.1` is shared with Windows:
+  add `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run
+  `wsl --shutdown` in PowerShell (it applies to all of WSL). Under the default NAT networking,
+  clanki can't reach Anki and `S` reports it unavailable; export instead (`Shift+E`, then
+  File ▸ Import in Anki; re-importing updates cards rather than duplicating them).
 - **A sandbox that costs nothing**: `uv run python tests/e2e_server.py` runs the whole app at
   http://localhost:18710/ with a fake LLM, a fake Anki and a throwaway data folder, alongside the
   real one if you like. The fake LLM makes a card from the first selected line and, for AI edits,

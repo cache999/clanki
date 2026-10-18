@@ -2,6 +2,7 @@
 import re
 import shutil
 import tempfile
+import threading
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,14 +18,15 @@ from pydantic import BaseModel, ConfigDict
 from . import convert
 from . import keys as keystore
 from .anki_format import export_txt
-from .ankiconnect import AnkiConnect, AnkiUnavailable, SendResult
+from .anki_index import AnkiIndex
+from .ankiconnect import AnkiConnect, AnkiError, AnkiUnavailable, SendResult
 from .config import Config
 from .doctext import chunk_pages, document_text, page_texts
 from .generation import GENERATED_TAG, note_to_card, parse_cards, to_notes
 from .jobs import JobRunner
 from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
 from .models import Document, Job, Note, Source
-from .prompts import load_profile
+from .prompts import facet_vocabulary, load_profile
 from .store import NOTE_BOOKKEEPING, NOTE_METADATA, Store
 from .validators import validate
 
@@ -33,6 +35,7 @@ KINDS = {".pdf": "pdf", ".pptx": "pptx", ".ppt": "pptx", ".odp": "pptx",
          ".docx": "docx", ".doc": "docx", ".odt": "docx"}
 LEFT_OUT_FOCUS = "Card this content regardless of UKMLA relevance."
 PARALLEL_JOBS = 3
+INDEX_MAX_AGE_S = 600  # re-read the Anki collection on a status poll after this long
 
 
 def default_provider():
@@ -112,8 +115,26 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         cache.write_text(json.dumps(pages, ensure_ascii=False), encoding="utf-8")
         return pages
 
-    runner = (JobRunner(store, pages_for, provider_for) if jobs_inline
-              else JobRunner.threaded(store, pages_for, provider_for, workers=PARALLEL_JOBS))
+    # the student's Anki collection: duplicate warnings and facet vocabulary
+    saved = store.get_setting("anki_index")
+    index = {"now": AnkiIndex.from_dict(saved) if saved else AnkiIndex.empty()}
+    index_lock = threading.Lock()
+
+    def refresh_index() -> AnkiIndex:
+        with index_lock:
+            index["now"] = AnkiIndex.fetch(anki)
+            store.set_setting("anki_index", index["now"].to_dict())
+        return index["now"]
+
+    def index_is_stale() -> bool:
+        t = index["now"].refreshed_at
+        return t is None or (datetime.now(timezone.utc) - datetime.fromisoformat(t)).total_seconds() >= INDEX_MAX_AGE_S
+
+    def facet_counts() -> dict:
+        return index["now"].facet_counts
+
+    runner = (JobRunner(store, pages_for, provider_for, facet_counts=facet_counts) if jobs_inline
+              else JobRunner.threaded(store, pages_for, provider_for, workers=PARALLEL_JOBS, facet_counts=facet_counts))
     store.fail_unfinished_jobs()
 
     def pick_model(model: str | None) -> str:
@@ -216,8 +237,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def list_notes(doc_id: str) -> list[dict]:
         get_doc(doc_id)
         notes = store.list_notes(doc_id)
-        return [{**n.model_dump(), "issues": [i.model_dump() for i in iss]}
-                for n, iss in zip(notes, validate(notes))]
+        return [{**n.model_dump(), "issues": [i.model_dump() for i in iss + in_anki]}
+                for n, iss, in_anki in zip(notes, validate(notes), index["now"].check(notes))]
 
     @app.post("/api/documents/{doc_id}/notes")
     def add_note(doc_id: str, note: dict = Body()) -> Note:
@@ -309,7 +330,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         model = pick_model(model)
         pages = pages_for(doc_id)
         chunks = chunk_pages(pages)
-        prefix = (len(load_profile().system) + sum(len(p) for p in pages)) // 4
+        prefix = (len(load_profile(facet_counts=facet_counts()).system) + sum(len(p) for p in pages)) // 4
         hit = miss = out = 0
         for i, (a, b) in enumerate(chunks):
             target = sum(len(p) for p in pages[a - 1:b]) // 4
@@ -414,7 +435,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def settings():
         return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"],
                                            "key": keystore.key_status("deepseek")}},
-                "default_model": store.get_setting("default_model", DEFAULT_MODEL)}
+                "default_model": store.get_setting("default_model", DEFAULT_MODEL),
+                "facets": facet_vocabulary(facet_counts=facet_counts())}
 
     @app.get("/api/settings")
     def get_settings():
@@ -450,7 +472,17 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
 
     @app.get("/api/anki/status")
     def anki_status():
-        return anki.status()
+        st = anki.status()
+        if st["connected"] and index_is_stale():
+            try:
+                refresh_index()
+            except AnkiError as e:
+                st["problems"].append("Could not read your Anki cards: %s" % e)
+        return {**st, "index": index["now"].summary()}
+
+    @app.post("/api/anki/refresh")
+    def anki_refresh():
+        return refresh_index().summary()
 
     @app.get("/api/anki/decks")
     def anki_decks() -> list[str]:

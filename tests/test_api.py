@@ -144,7 +144,8 @@ def test_send_adds_then_updates_and_skips_cards_with_errors(client, doc, anki):
 
 
 def test_anki_status_endpoint(client):
-    assert client.get("/api/anki/status").json() == {"connected": True, "version": 6, "problems": []}
+    st = client.get("/api/anki/status").json()
+    assert (st["connected"], st["version"], st["problems"], st["index"]["notes"]) == (True, 6, [], 0)
 
 
 def test_unknown_document_404s(client):

@@ -49,3 +49,21 @@ def test_large_documents_send_only_pages_around_the_target():
     assert len(text) < MAX_CONTEXT_CHARS
     assert "[p.8]" in text and "[p.12]" in text and "[p.7]" not in text and "[p.13]" not in text
     assert 'pages="8-12"' in text
+
+
+def _vocab_line(system: str) -> str:
+    return system.split("# Facet vocabulary\n", 1)[1].splitlines()[1]
+
+
+def test_without_anki_the_prompt_uses_the_profile_facets():
+    system = load_profile("medical_ukmla").system
+    assert "{FACETS}" not in system
+    assert _vocab_line(system).startswith("definition, function, location, MoA, origin")
+
+
+def test_the_students_frequent_facets_join_the_vocabulary():
+    counts = {"morphology": [46, "morphology"], "gram": [20, "gram"], "overview": [47, "overview"],
+              "definition": [891, "definition"], "once": [1, "once"]}
+    line = _vocab_line(load_profile("medical_ukmla", facet_counts=counts).system)
+    assert line.startswith("definition, function") and line.endswith("why, gram, morphology")
+    assert "overview" not in line and "once" not in line  # excluded as vague; too rare

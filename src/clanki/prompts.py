@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .doctext import context_window, document_text
+from .facets import vocabulary
 from .generation import EXAMPLE_OUTPUT
 
 PROMPTS = Path(__file__).parent / "prompts"
@@ -19,12 +20,23 @@ class Profile:
     system: str
 
 
-def load_profile(name: str = DEFAULT_PROFILE) -> Profile:
-    d = PROMPTS / name
-    meta = tomllib.loads((d / "profile.toml").read_text(encoding="utf-8"))
+def _meta(name: str) -> dict:
+    return tomllib.loads((PROMPTS / name / "profile.toml").read_text(encoding="utf-8"))
+
+
+def facet_vocabulary(name: str = DEFAULT_PROFILE, facet_counts: dict | None = None) -> list[str]:
+    """The profile's facets, extended by the ones the student uses most in Anki (facets.count_facets)."""
+    f = _meta(name).get("facets", {})
+    return vocabulary(facet_counts or {}, base=f.get("base", []), exclude=f.get("exclude", []),
+                      size=f.get("size", 50), min_count=f.get("min_count", 5))
+
+
+def load_profile(name: str = DEFAULT_PROFILE, facet_counts: dict | None = None) -> Profile:
     example = json.dumps(EXAMPLE_OUTPUT, ensure_ascii=False, indent=1)
-    system = (d / "system.md").read_text(encoding="utf-8").replace("{EXAMPLE}", example).strip()
-    return Profile(name=name, label=meta["label"], system=system)
+    facets = ", ".join(facet_vocabulary(name, facet_counts))
+    system = (PROMPTS / name / "system.md").read_text(encoding="utf-8")
+    system = system.replace("{EXAMPLE}", example).replace("{FACETS}", facets).strip()
+    return Profile(name=name, label=_meta(name)["label"], system=system)
 
 
 def list_profiles() -> list[Profile]:

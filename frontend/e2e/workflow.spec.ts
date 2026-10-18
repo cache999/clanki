@@ -225,3 +225,38 @@ test("ask the AI to change a card, then accept or discard", async ({ page }) => 
   await expect(card(page, "Second card")).toHaveCount(0);
   await expect(edited.locator(".front")).toHaveText("Edited: shorter front");
 });
+
+test("coverage strip, and warnings for cards already in Anki", async ({ page, request }) => {
+  // a card made in Anki itself
+  const note = { deckName: "Default", modelName: "Basic (optional reversed card)", tags: [],
+    fields: { Front: "Bipolar cells (function)", Back: "relay photoreceptor signals", "Add Reverse": "", Why: "" } };
+  await request.post(ANKI, { data: { action: "addNotes", version: 6, params: { notes: [note] } } });
+  await page.goto("/");
+
+  // the strip has a segment per page; clicking one goes there
+  const segs = page.locator(".coverage .seg");
+  await expect(segs).toHaveCount(2);
+  await expect(segs.nth(0)).toHaveClass(/carded/);
+  await segs.nth(1).click();
+  await expect(page.locator(".reader-bar")).toContainText("p. 2/2");
+  await segs.nth(0).click();
+  await expect(page.locator(".reader-bar")).toContainText("p. 1/2");
+
+  // Settings re-reads Anki and shows the subquestion vocabulary
+  await page.keyboard.press(",");
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("button", { name: "Re-read Anki" }).click();
+  await expect(dialog).toContainText(/\d+ cards read from Anki/);
+  await expect(dialog.locator(".facets")).toContainText("MoA");
+  await page.keyboard.press("Escape");
+
+  // a new card on the same question gets a warning showing the Anki card
+  await segs.nth(1).click();
+  await select(page, "Bipolar cells");
+  await page.keyboard.press("n");
+  await page.keyboard.type("Bipolar cells (function)");
+  await page.keyboard.press("Control+Enter");
+  const bip = card(page, "Bipolar cells (function)");
+  await expect(bip.locator(".issues")).toContainText('Already in Anki: "Bipolar cells (function)" → relay photoreceptor signals (Default)');
+  await expect(segs.nth(1)).toHaveAttribute("title", /p\.2: \d+ cards/);
+});

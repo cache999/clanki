@@ -57,7 +57,7 @@ You receive the document as context and a target from it. Card only the target. 
 
 # Facet vocabulary
 The student's existing cards use these subquestion words; use them, in lower case except abbreviations:
-definition, function, location, MoA, origin, insertion, innervation, attachments, course, supply, drains into, structure, histology, pathophysiology, cause, causes, presentation, symptoms, investigation, treatment, use, class, adverse effects, contraindications, interactions, monitoring, value, example, result, mechanism, why
+{FACETS}
 - Drugs: MoA, use, class, adverse effects, contraindications, monitoring.
 - Nerves: origin, course, innervation. Muscles: origin, insertion, innervation, action.
 When no facet fits, a new one is allowed; add the flag "new facet: <word>" to that card.

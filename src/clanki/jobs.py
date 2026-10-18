@@ -23,19 +23,21 @@ def _now() -> str:
 
 class JobRunner:
     """Runs jobs on a thread pool (inline when executor=None, for tests). pages_for gives a
-    document's page texts; provider_for gives the LLM provider or raises LLMError."""
+    document's page texts; provider_for gives the LLM provider or raises LLMError; facet_counts
+    gives the student's facet usage from Anki, for the prompt's vocabulary."""
 
     def __init__(self, store: Store, pages_for: Callable[[str], list[str]], provider_for: Callable,
-                 executor=None):
+                 executor=None, facet_counts: Callable[[], dict] = dict):
         self.store = store
         self.pages_for = pages_for
         self.provider_for = provider_for
         self.executor = executor
+        self.facet_counts = facet_counts
         self._lock = threading.Lock()
 
     @classmethod
-    def threaded(cls, store, pages_for, provider_for, workers: int = 3) -> "JobRunner":
-        return cls(store, pages_for, provider_for, executor=ThreadPoolExecutor(workers, thread_name_prefix="job"))
+    def threaded(cls, store, pages_for, provider_for, workers: int = 3, **kw) -> "JobRunner":
+        return cls(store, pages_for, provider_for, executor=ThreadPoolExecutor(workers, thread_name_prefix="job"), **kw)
 
     def submit(self, job: Job) -> Job:
         j = self.store.add_job(job)
@@ -91,7 +93,7 @@ class JobRunner:
             self._finish(job_id, status="failed", error="internal error: %s" % e, **spent)
 
     def _messages(self, job: Job, title: str, pages: list[str]) -> list[dict]:
-        profile = load_profile(job.profile)
+        profile = load_profile(job.profile, facet_counts=self.facet_counts())
         if job.mode != "edit":
             return build_messages(profile, title=title, pages=pages, target=job.target,
                                   target_pages=job.pages, focus=job.focus, mode=job.mode)

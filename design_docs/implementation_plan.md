@@ -21,7 +21,7 @@ Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_
 - **`Cloze (overlapping)`**: Title, Original, Mnemonic, Remarks, Sources, Settings, Text1–Text20, Full (27 fields). Title comes first, but the builder in `claude_skill.md` assumed Original first. Its output would have filled the wrong fields on every list note.
 - **How you actually make lists** (this differs from the old skill, and the prompt follows your practice): settings are always `1,1,0 | n,n,n,n` with the whole-list card on. Sets get an imposed order (top-down anatomy, severity, frequency), stated in the Title or Remarks. `Original` uses `<br>` lines or `<ul>`. The Text fields wrap items in `<div>` or `<li>` to match.
 - Cloze Overlapper for 23x is installed (supports Anki up to 23.12.1). clanki fills Text1–20 and Full itself, so the add-on isn't needed when importing or sending (confirmed by test 1).
-- AnkiConnect is not installed yet (add-on code `2055492159`).
+- AnkiConnect (add-on code `2055492159`) is installed and verified on Anki 25.09.2 (2026-10-18).
 
 ## Architecture
 
@@ -158,12 +158,12 @@ Mined from your 15,255 Basic fronts, the most common bracketed subquestions are:
 
 Answer counts: `[2]` is used 861 times, `[3]` 252, `[4]` 61.
 
-How the cache works:
+How the cache works (built in milestone 4):
 
-- A `facets` table is seeded from Anki through AnkiConnect (refreshable). Synonyms are normalised (`def` → definition, `pathophys` → pathophysiology).
-- Facets are grouped by entity type. For a drug: MoA, use, class, adverse effects, contraindications, monitoring. For a nerve: origin, course, innervation.
-- The model gets the top ~50 facets plus the set for the entity type it is carding, and is told to prefer them. A new facet is allowed but flagged on the card.
-- Counts update when cards are sent. Every drug card is then asked the same generic questions, which avoids one-offs like "is it a prodrug?" on a single card.
+- Facet counts are mined from Anki through AnkiConnect, as part of the Anki snapshot (`anki_index.py`). Only abbreviations are normalised (`def` → definition, `pathophys` → pathophysiology); `causes` and `functions` stay distinct from `cause` and `function`.
+- Facets are grouped by entity type in the system prompt. For a drug: MoA, use, class, adverse effects, contraindications, monitoring. For a nerve: origin, course, innervation.
+- The model gets the curated list in `profile.toml` plus your most used other facets (up to 50 in all), and is told to prefer them. A new facet is allowed but flagged on the card.
+- Counts update when sent cards are read back from Anki. Every drug card is then asked the same generic questions, which avoids one-offs like "is it a prodrug?" on a single card.
 
 ## Data model (SQLite)
 
@@ -174,8 +174,7 @@ How the cache works:
   - id, `guid`, source_id, job_id, type, all fields, deck, tags, warnings.
   - status: `new`/`sent`/`edited`/`deleted` (soft delete, so undo works).
   - anki_note_id, sent_at.
-- `facets`: label, normalised label, entity type, count, origin (`anki`/`clanki`).
-- `settings`: key/value.
+- `settings`: key/value, including `anki_index`, the snapshot of the Anki collection (notes and facet counts).
 
 The `guid` is generated when a card is created. It makes `.txt` re-imports update notes instead of duplicating them, which test 3b checks. AnkiConnect updates use `anki_note_id`.
 
@@ -207,7 +206,16 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - Cost display.
    - AI edits: revise one card from an instruction (same cached prefix plus the card and its source). The suggestion waits as a diff until accepted or discarded, and asking again replaces it. Accepting a change to a card already in Anki marks it `edited`. A type change (Q/A ↔ list) on a sent card replaces it, because Anki cannot change a note's type, and tells you to delete the old note in Anki. A split adds the extra cards from the same source. Accept is refused if the card changed after the request.
 3. **Quality loop**: build an eval from 2–3 of your real handouts plus cards you'd accept. Compare DeepSeek Flash and V4 Pro side by side (Claude models once that provider exists), and pick defaults per mode (e.g. a cheap model for the whole-document first pass, a stronger one for highlights).
-4. **Anki-aware**: facet vocabulary, duplicate warnings, coverage view.
+4. **Anki-aware: done 2026-10-18** (milestone 3 skipped for now: card quality is already good):
+   - AnkiConnect verified against the real Anki from WSL with mirrored networking (status check, then add, update and delete in `clanki-test`).
+   - `anki_index.py` is a snapshot of every Basic and list note (Front/Title, Back without the reverse prompt, Add Reverse, deck). It is read when a status poll finds it missing or over 10 minutes old, and by Settings ▸ Re-read Anki. Reading 17,736 notes takes about 1.5 s. The snapshot is kept in the `settings` table, so warnings work while Anki is closed. Cards that clanki sends are counted on the next read.
+   - Duplicate warnings, on cards not yet sent:
+     - the same entity (compared as a set of content words, so word order and small words don't matter), asked with a shared facet, or with no facets on either side;
+     - a reverse card with the same Back as a reversed Anki card.
+
+     Run against your own collection, 2% of notes match another one in it, mostly identical fronts or a shared facet.
+   - Facet vocabulary (`facets.py`): bracketed subquestions are mined from the Basic fronts, and only abbreviations are normalised (`def`, `pathophys`, `desc`), because plurals ask for several answers. The prompt gets the curated list from `profile.toml`, then your most used other facets (at least 5 uses, up to 50 in all, alphabetical so the cached prefix stays stable). Vague ones (`describe`, `overview`, `brief`, …) are excluded. Settings shows the list.
+   - Coverage strip beside the reader: one segment per page, green by number of cards (a chunk's cards spread over its pages), amber while generating, red on failure; click to jump.
 5. **OCR and web**:
    - Drag a region on a page, or paste a screenshot.
    - A vision model transcribes it into an editable snippet, which is then generated from.

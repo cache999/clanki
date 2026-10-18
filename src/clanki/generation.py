@@ -110,7 +110,7 @@ def parse_cards(cards: list[dict]) -> GenOutput:
     return _OUTPUT.validate_python({"cards": cards})
 
 
-_REVERSE_IN_BACK = re.compile(r"\s*(?:<br\s*/?>|\n)?\s*\(r:\s*(.+?)\)\s*$", re.I)
+REVERSE_IN_BACK = re.compile(r"\s*(?:<br\s*/?>|\n)?\s*\(r:\s*(.+?)\)\s*$", re.I)
 
 
 def to_notes(out: GenOutput, document_id: str, source_id: str | None) -> list[Note]:
@@ -120,7 +120,7 @@ def to_notes(out: GenOutput, document_id: str, source_id: str | None) -> list[No
                       tags=[GENERATED_TAG])
         if c.type == "qa":
             back, prompt = c.back, c.reverse_prompt
-            m = _REVERSE_IN_BACK.search(back)
+            m = REVERSE_IN_BACK.search(back)
             if m:
                 back, prompt = back[:m.start()], prompt or m.group(1)
             notes.append(Note(type="qa", front=c.front, back=back, why=c.why, add_reverse=c.add_reverse,
