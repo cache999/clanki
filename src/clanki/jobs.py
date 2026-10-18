@@ -88,7 +88,11 @@ class JobRunner:
                     raise GenerationError("the model returned no card")
                 return self._finish(job_id, status="done", proposal=[c.model_dump() for c in out.cards],
                                     flags=out.flags, **spent)
-            notes = [self.store.add_note(n) for n in to_notes(out, doc.id, job.source_id)]
+            made = to_notes(out, doc.id, job.source_id)
+            first, last = job.pages
+            pages = "p.%d" % first if first == last else "p.%d–%d" % (first, last)
+            with self.store.action(doc.id, "Generate %d card%s (%s)" % (len(made), "" if len(made) == 1 else "s", pages)):
+                notes = [self.store.add_note(n) for n in made]
             self._finish(job_id, status="done", note_ids=[n.id for n in notes],
                          left_out=[x.model_dump() for x in out.left_out], flags=out.flags,
                          image_occlusion=out.image_occlusion_candidates, **spent)

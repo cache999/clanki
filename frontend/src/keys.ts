@@ -14,6 +14,8 @@ export type Command =
   | "edit"
   | "delete"
   | "undo"
+  | "redo"
+  | "history"
   | "toggleReverse"
   | "prevPage"
   | "nextPage"
@@ -44,7 +46,9 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "prev", keys: ["k", "ArrowUp"], help: "Previous card", group: "Cards" },
   { command: "edit", keys: ["e", "Enter"], help: "Edit card · Ctrl+Enter saves · Esc cancels", group: "Cards" },
   { command: "delete", keys: ["x", "Delete"], help: "Delete card", group: "Cards" },
-  { command: "undo", keys: ["z", "Ctrl+z"], help: "Undo delete", group: "Cards" },
+  { command: "undo", keys: ["z", "Ctrl+z"], help: "Undo the last change to the cards", group: "Cards" },
+  { command: "redo", keys: ["Shift+z", "Ctrl+Shift+z", "Ctrl+y"], help: "Redo", group: "Cards" },
+  { command: "history", keys: ["h"], help: "Undo history: click a change to undo back to it", group: "Cards" },
   { command: "toggleReverse", keys: ["r"], help: "Toggle reverse card (asks for the reverse prompt)", group: "Cards" },
   { command: "prevPage", keys: ["["], help: "Previous page", group: "Reader" },
   { command: "nextPage", keys: ["]"], help: "Next page", group: "Reader" },

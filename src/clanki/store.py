@@ -2,6 +2,7 @@
 queried, so new card fields need no schema migration."""
 import json
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -18,6 +19,10 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY, document_id TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, document_id TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0,
+    data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS actions_doc ON actions(document_id);
 CREATE INDEX IF NOT EXISTS sources_doc ON sources(document_id);
 CREATE INDEX IF NOT EXISTS notes_doc ON notes(document_id);
 CREATE INDEX IF NOT EXISTS jobs_doc ON jobs(document_id);
@@ -40,6 +45,7 @@ def _id() -> str:
 class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._recording = threading.local()  # the action being recorded on this thread
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             db.execute("PRAGMA journal_mode=WAL")
@@ -84,7 +90,7 @@ class Store:
 
     def delete_document(self, doc_id: str) -> None:
         with self._db() as db:
-            for table in ("notes", "sources", "jobs"):
+            for table in ("notes", "sources", "jobs", "actions"):
                 db.execute("DELETE FROM %s WHERE document_id = ?" % table, (doc_id,))
             db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
@@ -175,6 +181,7 @@ class Store:
                                  "anki_note_id": None, "created_at": now, "updated_at": now})
         with self._db() as db:
             self._put_note(db, n)
+        self._track(None, n)
         return n
 
     def get_note(self, note_id: str) -> Note | None:
@@ -189,12 +196,13 @@ class Store:
         return [Note.model_validate_json(r[0]) for r in rows]
 
     def _replace(self, note_id: str, **update) -> Note | None:
-        n = self.get_note(note_id)
-        if n is None:
+        old = self.get_note(note_id)
+        if old is None:
             return None
-        n = Note.model_validate({**n.model_dump(), **update, "updated_at": _now()})
+        n = Note.model_validate({**old.model_dump(), **update, "updated_at": _now()})
         with self._db() as db:
             self._put_note(db, n)
+        self._track(old, n)
         return n
 
     def update_note(self, note_id: str, patch: dict) -> Note | None:
@@ -220,3 +228,100 @@ class Store:
 
     def restore_note(self, note_id: str) -> Note | None:
         return self._replace(note_id, deleted=False)
+
+    # undo history: changes to cards, recorded per document as actions of before/after snapshots
+    @contextmanager
+    def action(self, document_id: str, label: str):
+        """Record the card changes made inside this block as one undoable step."""
+        if getattr(self._recording, "changes", None) is not None:  # inside another action: part of it
+            yield
+            return
+        self._recording.changes = {}
+        try:
+            yield
+        finally:
+            changes, self._recording.changes = self._recording.changes, None
+            entries = [{"note_id": k, "before": b, "after": a} for k, (b, a) in changes.items() if _same(b) != _same(a)]
+            if entries:
+                with self._db() as db:
+                    db.execute("DELETE FROM actions WHERE document_id = ? AND undone = 1", (document_id,))
+                    db.execute("INSERT INTO actions (document_id, data) VALUES (?, ?)", (document_id, json.dumps(
+                        {"label": label, "created_at": _now(), "entries": entries}, ensure_ascii=False)))
+
+    def _track(self, before: Note | None, after: Note) -> None:
+        changes = getattr(self._recording, "changes", None)
+        if changes is None:
+            return
+        if after.id in changes:
+            changes[after.id][1] = after.model_dump()
+        else:
+            changes[after.id] = [before.model_dump() if before else None, after.model_dump()]
+
+    def history(self, document_id: str, limit: int = 50) -> list[dict]:
+        with self._db() as db:
+            rows = db.execute("SELECT id, undone, data FROM actions WHERE document_id = ? ORDER BY id DESC LIMIT ?",
+                              (document_id, limit)).fetchall()
+        out = []
+        for i, undone, data in rows:
+            d = json.loads(data)
+            out.append({"id": i, "label": d["label"], "created_at": d["created_at"], "undone": bool(undone),
+                        "cards": len(d["entries"])})
+        return out
+
+    def undo(self, document_id: str, to: int | None = None) -> dict:
+        """Undo the latest step (or every step back to and including `to`). Returns the last label
+        and how many removed cards are still in Anki."""
+        return self._step(document_id, to, undo=True)
+
+    def redo(self, document_id: str, to: int | None = None) -> dict:
+        return self._step(document_id, to, undo=False)
+
+    def _step(self, document_id: str, to: int | None, undo: bool) -> dict:
+        label, in_anki = None, 0
+        while True:
+            with self._db() as db:
+                row = db.execute(
+                    "SELECT id, data FROM actions WHERE document_id = ? AND undone = ? ORDER BY id %s LIMIT 1"
+                    % ("DESC" if undo else "ASC"), (document_id, 0 if undo else 1)).fetchone()
+            if row is None or (to is not None and (row[0] < to if undo else row[0] > to)):
+                break
+            d = json.loads(row[1])
+            for e in d["entries"]:
+                in_anki += self._restore(e["note_id"], e["before" if undo else "after"])
+            with self._db() as db:
+                db.execute("UPDATE actions SET undone = ? WHERE id = ?", (1 if undo else 0, row[0]))
+            label = d["label"]
+            if to is None or row[0] == to:
+                break
+        return {"label": label, "in_anki": in_anki}
+
+    def _restore(self, note_id: str, snapshot: dict | None) -> int:
+        """Make a card as in the snapshot (None: it did not exist). Anki links are kept, and a card
+        in Anki whose content changes is marked edited. Returns 1 if a card in Anki was removed."""
+        cur = self.get_note(note_id)
+        if snapshot is None:
+            if cur is None or cur.deleted:
+                return 0
+            with self._db() as db:
+                self._put_note(db, cur.model_copy(update={"deleted": True, "updated_at": _now()}))
+            return int(cur.anki_note_id is not None)
+        target = Note.model_validate(snapshot)
+        if cur is not None:
+            keep = {k: getattr(cur, k) for k in ("guid", "anki_note_id", "sent_at", "created_at")}
+            status = target.status
+            if cur.anki_note_id is not None:
+                changed = _content(target) != _content(cur)
+                status = "edited" if changed or cur.status == "edited" else cur.status
+            target = target.model_copy(update={**keep, "status": status})
+        with self._db() as db:
+            self._put_note(db, target.model_copy(update={"updated_at": _now()}))
+        return 0
+
+
+def _same(snapshot: dict | None) -> dict | None:
+    """A snapshot without its timestamp, to tell whether anything changed."""
+    return None if snapshot is None else {k: v for k, v in snapshot.items() if k != "updated_at"}
+
+
+def _content(n: Note) -> dict:
+    return n.model_dump(exclude=NOTE_BOOKKEEPING | NOTE_METADATA)

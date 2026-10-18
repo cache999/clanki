@@ -309,3 +309,36 @@ test("open a web page by its address", async ({ page }) => {
   await expect(page.locator("header select").first()).toHaveValue(/.+/);
   await expect(page.locator("header select option:checked").first()).toHaveText("The Median Nerve");
 });
+
+test("undo and redo any change, and undo back through the history", async ({ page, request }) => {
+  // a card of its own, in the document the app opens (the newest)
+  const docs = await (await request.get("/api/documents")).json();
+  const docId = docs[docs.length - 1].id;
+  await request.post(`/api/documents/${docId}/notes`, { data: { type: "qa", front: "Undo test card", back: "original back" } });
+  await page.goto("/");
+  const rho = card(page, "Undo test card");
+  await rho.click();
+  const before = "original back";
+
+  // edit the Back, then Z undoes it and Shift+Z redoes it
+  await page.keyboard.press("e");
+  await page.locator('textarea[name="back"]').fill("498 nm (undo test)");
+  await page.keyboard.press("Control+Enter");
+  await expect(rho.locator(".back")).toHaveText("498 nm (undo test)");
+  await page.keyboard.press("z");
+  await expect(page.locator(".toast")).toContainText("Undid: Edit card");
+  await expect(rho.locator(".back")).toHaveText(before);
+  await page.keyboard.press("Shift+Z");
+  await expect(page.locator(".toast")).toContainText("Redid: Edit card");
+  await expect(rho.locator(".back")).toHaveText("498 nm (undo test)");
+
+  // H lists the changes; clicking one undoes back to it
+  await page.keyboard.press("h");
+  const rows = page.locator(".history li");
+  await expect(rows.first()).toContainText("Edit card");
+  await rows.first().click();
+  await expect(rho.locator(".back")).toHaveText(before);
+  await expect(rows.first()).toHaveClass(/undone/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".history")).toHaveCount(0);
+});

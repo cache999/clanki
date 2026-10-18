@@ -111,6 +111,12 @@ class EditIn(BaseModel):
     model: str | None = None
 
 
+def _name(n: Note) -> str:
+    """A card's first field, short, for the undo history."""
+    s = " ".join((n.front if n.type == "qa" else n.title).split()) or "(empty)"
+    return s if len(s) <= 50 else s[:49] + "…"
+
+
 def _content(n: Note) -> dict:
     """What a card says (and would send to Anki), without clanki's bookkeeping."""
     return n.model_dump(exclude=NOTE_BOOKKEEPING | NOTE_METADATA)
@@ -331,7 +337,9 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     @app.post("/api/documents/{doc_id}/notes")
     def add_note(doc_id: str, note: dict = Body()) -> Note:
         get_doc(doc_id)
-        return store.add_note(Note.model_validate({**note, "document_id": doc_id}))
+        n = Note.model_validate({**note, "document_id": doc_id})
+        with store.action(doc_id, "Add card: " + _name(n)):
+            return store.add_note(n)
 
     @app.get("/api/notes/{note_id}")
     def note(note_id: str) -> Note:
@@ -339,18 +347,46 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
 
     @app.patch("/api/notes/{note_id}")
     def update_note(note_id: str, patch: dict = Body()) -> Note:
-        get_note(note_id)
-        return store.update_note(note_id, patch)
+        n = get_note(note_id)
+        what = ("Dismiss a flag" if set(patch) == {"flags"} else
+                "Reverse card " + ("on" if patch["add_reverse"] else "off")
+                if set(patch) <= {"add_reverse", "reverse_prompt"} and "add_reverse" in patch else "Edit card")
+        with store.action(n.document_id, "%s: %s" % (what, _name(n))):
+            return store.update_note(note_id, patch)
 
     @app.delete("/api/notes/{note_id}")
     def delete_note(note_id: str) -> Note:
-        get_note(note_id)
-        return store.delete_note(note_id)
+        n = get_note(note_id)
+        with store.action(n.document_id, "Delete card: " + _name(n)):
+            return store.delete_note(note_id)
 
     @app.post("/api/notes/{note_id}/restore")
     def restore_note(note_id: str) -> Note:
-        get_note(note_id)
-        return store.restore_note(note_id)
+        n = get_note(note_id)
+        with store.action(n.document_id, "Restore card: " + _name(n)):
+            return store.restore_note(note_id)
+
+    # undo history
+    def step_result(r: dict) -> dict:
+        k = r["in_anki"]
+        msg = (None if not k else "The removed card is still in Anki: delete it there if you don't want it."
+               if k == 1 else "%d removed cards are still in Anki: delete them there if you don't want them." % k)
+        return {"label": r["label"], "message": msg}
+
+    @app.post("/api/documents/{doc_id}/undo")
+    def undo(doc_id: str, to: int | None = None):
+        get_doc(doc_id)
+        return step_result(store.undo(doc_id, to))
+
+    @app.post("/api/documents/{doc_id}/redo")
+    def redo(doc_id: str, to: int | None = None):
+        get_doc(doc_id)
+        return step_result(store.redo(doc_id, to))
+
+    @app.get("/api/documents/{doc_id}/history")
+    def history(doc_id: str):
+        get_doc(doc_id)
+        return store.history(doc_id)
 
     # Anki
     @app.get("/api/documents/{doc_id}/export.txt")
@@ -497,6 +533,12 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         if _content(n) != _content(Note.model_validate(j.before)):
             raise HTTPException(409, "The card was changed after the suggestion was requested: discard it, or ask again.")
         first, *rest = to_notes(parse_cards(j.proposal), n.document_id, n.source_id)
+        label = "Accept AI edit: " + _name(n) + (" (split into %d)" % (1 + len(rest)) if rest else "")
+        with store.action(n.document_id, label):
+            return accept_into(j, n, first, rest)
+
+    def accept_into(j: Job, n: Note, first: Note, rest: list[Note]) -> dict:
+        job_id = j.id
         message = None
         if first.type == n.type or n.anki_note_id is None:
             ids = [store.update_note(n.id, _replacement_patch(first)).id]

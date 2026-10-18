@@ -123,6 +123,11 @@ export type GenerateBody = {
   model?: string;
 };
 
+/** One undoable change to a document's cards, newest first in the history. */
+export type HistoryEntry = { id: number; label: string; created_at: string; undone: boolean; cards: number };
+/** label: what was undone or redone (null: nothing to do); message: e.g. cards still in Anki. */
+export type StepResult = { label: string | null; message: string | null };
+
 /** index: clanki's snapshot of the Anki collection, used for duplicate warnings. */
 export type AnkiIndexSummary = { notes: number; refreshed_at: string | null };
 export type AnkiStatus = { connected: boolean; version: number | null; problems: string[]; index: AnkiIndexSummary };
@@ -164,6 +169,11 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 
 export const api = {
   documents: () => call<Doc[]>("GET", "/api/documents"),
+  undo: (docId: string, to?: number) =>
+    call<StepResult>("POST", `/api/documents/${docId}/undo${to === undefined ? "" : `?to=${to}`}`),
+  redo: (docId: string, to?: number) =>
+    call<StepResult>("POST", `/api/documents/${docId}/redo${to === undefined ? "" : `?to=${to}`}`),
+  history: (docId: string) => call<HistoryEntry[]>("GET", `/api/documents/${docId}/history`),
   openUrl: (url: string) => call<Doc>("POST", "/api/documents/url", { url }),
   upload: (file: File) => {
     const fd = new FormData();

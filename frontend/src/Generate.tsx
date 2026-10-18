@@ -1,6 +1,6 @@
 // Generation UI: focus box, whole-document confirmation, jobs panel, settings dialog.
 import { useEffect, useRef, useState } from "react";
-import { api, type AnkiIndexSummary, type AnkiStatus, type Estimate, type Job, type Settings } from "./api";
+import { api, type AnkiIndexSummary, type AnkiStatus, type Estimate, type HistoryEntry, type Job, type Settings } from "./api";
 import { jobSummary, money, pagesLabel } from "./jobs";
 
 const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image" };
@@ -173,6 +173,36 @@ export function JobsPanel(p: {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The document's undo history, newest first. Clicking a change undoes back to it (or, if it is
+ * undone, redoes up to it). `version` changes whenever the cards do, to reload the list. */
+export function HistoryPanel(p: { docId: string; version: unknown; onPick(e: HistoryEntry): void; onClose(): void }) {
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  useEffect(() => {
+    void api.history(p.docId).then(setEntries, () => setEntries([]));
+  }, [p.docId, p.version]);
+  return (
+    <div className="jobs-panel history" role="dialog" aria-label="Undo history">
+      <div className="jobs-head">
+        <b>History</b>
+        <span className="muted">click a change to undo back to it · Z undo · Shift+Z redo</span>
+        <span className="spacer" />
+        <button onClick={p.onClose} title="Close (Esc or H)">
+          ×
+        </button>
+      </div>
+      {!entries.length && <p className="muted">No changes yet.</p>}
+      <ul>
+        {entries.map((e) => (
+          <li key={e.id} className={e.undone ? "undone" : ""} onClick={() => p.onPick(e)} title={e.undone ? "Redo up to here" : "Undo back to here"}>
+            <span>{e.label}</span>
+            <span className="muted">{new Date(e.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

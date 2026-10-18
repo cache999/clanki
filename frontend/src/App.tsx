@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
 import { sourceLabel } from "./figure";
-import { DocumentConfirm, FocusBox, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
+import { DocumentConfirm, FocusBox, HistoryPanel, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
 import { Help } from "./Help";
 import { jobSummary, money, openEdits, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
@@ -37,7 +37,7 @@ export function App() {
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [draft, setDraft] = useState<(NoteDraft & { sel?: ReaderSelection }) | null>(null);
   const [selection, setSelection] = useState<ReaderSelection | null>(null);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<Toast | null>(null);
@@ -114,7 +114,7 @@ export function App() {
     setEditing(null);
     setDraft(null);
     setSelection(null);
-    setUndoStack([]);
+    setHistoryOpen(false);
     setSendErrors({});
     setJobs([]);
     setFocusOpen(false);
@@ -348,20 +348,19 @@ export function App() {
     if (!doc || !selected) return;
     const i = ordered.findIndex((n) => n.id === selected.id);
     if (!(await guard(api.deleteNote(selected.id)))) return;
-    setUndoStack((u) => [...u, selected.id]);
     const after = ordered[i + 1] ?? ordered[i - 1];
     setSelectedId(after?.id ?? null);
     await refresh(doc.id);
     say("Card deleted · Z to undo");
   }
 
-  async function undo() {
-    const id = undoStack[undoStack.length - 1];
-    if (!doc || !id) return;
-    if (!(await guard(api.restoreNote(id)))) return;
-    setUndoStack((u) => u.slice(0, -1));
+  async function step(dir: "undo" | "redo", to?: number) {
+    if (!doc) return;
+    const r = await guard(dir === "undo" ? api.undo(doc.id, to) : api.redo(doc.id, to));
+    if (!r) return;
+    if (!r.label) return say(dir === "undo" ? "Nothing to undo" : "Nothing to redo");
+    say(`${dir === "undo" ? "Undid" : "Redid"}: ${r.label}${r.message ? " · " + r.message : ""}`);
     await refresh(doc.id);
-    setSelectedId(id);
   }
 
   async function toggleReverse() {
@@ -429,7 +428,11 @@ export function App() {
       case "delete":
         return void remove();
       case "undo":
-        return void undo();
+        return void step("undo");
+      case "redo":
+        return void step("redo");
+      case "history":
+        return doc ? setHistoryOpen((o) => !o) : say("Open a document first (O)");
       case "toggleReverse":
         return void toggleReverse();
       case "prevPage":
@@ -463,6 +466,7 @@ export function App() {
       if (e.key === "Escape" && !isTyping(e.target)) {
         if (help) setHelp(false);
         else if (jobsOpen) setJobsOpen(false);
+        else if (historyOpen) setHistoryOpen(false);
         else if (regionMode) setRegionMode(false);
         else if (selection) {
           setSelection(null);
@@ -479,7 +483,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen]);
 
   const pending = notes.filter((n) => n.status !== "sent").length;
   return (
@@ -667,6 +671,14 @@ export function App() {
           onChanged={() => void reloadJobs()}
           onShowSource={(sid) => reader.current?.showSource(sid)}
           say={say}
+        />
+      )}
+      {historyOpen && doc && (
+        <HistoryPanel
+          docId={doc.id}
+          version={notes}
+          onPick={(e) => void step(e.undone ? "redo" : "undo", e.id)}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
       {docConfirm && (
