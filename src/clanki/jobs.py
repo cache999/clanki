@@ -1,11 +1,16 @@
 """LLM jobs: build the prompt, call the model, turn the reply into cards (or a suggestion, or a
 transcription)."""
+import base64
+import io
 import json
 import logging
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable
+
+from PIL import Image
 
 from . import media
 from .doctext import document_text
@@ -127,12 +132,19 @@ class JobRunner:
         src = self.store.get_source(job.source_id)
         pages = self.pages_for(job.document_id)
         page = pages[src.page - 1] if 0 < src.page <= len(pages) else ""
-        messages = build_transcribe_messages(load_profile(job.profile), image=self.image_for(src),
-                                             page_text=page[:MAX_PAGE_CONTEXT])
-        r = self.provider_for().complete(messages, model=job.model, json_mode=False)
-        _spend(spent, r)
-        if self.store.get_job(job.id).status == "cancelled":
-            return self._finish(job.id, **spent)
+        image = self.image_for(src)
+        messages = build_transcribe_messages(load_profile(job.profile), image=image, page_text=page[:MAX_PAGE_CONTEXT])
+        provider = self.provider_for()
+        for _ in range(MAX_ATTEMPTS):  # the image is sometimes dropped on DeepSeek's side; try once more
+            r = provider.complete(messages, model=job.model, json_mode=False)
+            _spend(spent, r)
+            if self.store.get_job(job.id).status == "cancelled":
+                return self._finish(job.id, **spent)
+            if not _missed_image(r, messages, image):
+                break
+        else:
+            raise GenerationError("DeepSeek did not receive the image (its image reading seems unavailable for the "
+                                  "moment): try again shortly")
         if not r.text.strip():
             raise GenerationError("the model returned no text for the image")
         self.store.set_source_text(src.id, r.text.strip())
@@ -161,3 +173,31 @@ def _spend(spent: dict, r) -> None:
     spent["cost_usd"] += r.cost_usd
     for k in spent["usage"]:
         spent["usage"][k] += getattr(r.usage, k)
+
+
+_NO_IMAGE = re.compile(r"\bNO_IMAGE\b|\bno image\b|\bimage (?:is |was )?(?:unsupported|not (?:provided|attached|available|visible|shown))"
+                       r"|\b(?:can ?not|can't|unable to) (?:see|view|read|access|open) (?:the |any |an |this )?image", re.I)
+_PIXELS_PER_TOKEN = 1600  # DeepSeek: ~200 prompt tokens for a 760×420 image, at most ~1024 per image
+_CHARS_PER_TOKEN = 3.5  # a generous estimate of the text's share of the prompt
+
+
+def is_refusal(text: str) -> bool:
+    """A short reply saying the image could not be seen (not a transcript)."""
+    return len(text) < 300 and bool(_NO_IMAGE.search(text))
+
+
+def _missed_image(r, messages: list[dict], image: str) -> bool:
+    """Whether the reply shows the model never got the image: it says so (the prompt asks for NO_IMAGE),
+    or a large image added too few prompt tokens to have been read (the model may then invent a
+    transcript from the page text)."""
+    if is_refusal(r.text):
+        return True
+    try:
+        w, h = Image.open(io.BytesIO(base64.b64decode(image.split(",", 1)[1]))).size
+    except Exception:
+        return False
+    expected = min(1024, w * h / _PIXELS_PER_TOKEN)
+    if expected < 200:  # too small to tell from the token count
+        return False
+    text = len(messages[0]["content"]) + sum(len(p.get("text", "")) for p in messages[1]["content"])
+    return r.usage.cache_hit + r.usage.cache_miss - text / _CHARS_PER_TOKEN < 0.3 * expected

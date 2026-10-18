@@ -8,10 +8,11 @@ from clanki.llm import LLMError, LLMResult, Usage
 class ScriptedLLM:
     """Replies with the given texts in turn (an Exception instance is raised instead)."""
 
-    def __init__(self, *replies, finish="stop", on_call=None):
+    def __init__(self, *replies, finish="stop", on_call=None, usage=None):
         self.replies = list(replies)
         self.finish = finish
         self.on_call = on_call
+        self.usage = usage or Usage(cache_hit=100, cache_miss=50, output=20, reasoning=5)
         self.calls = []
 
     def complete(self, messages, *, model, **kw):
@@ -22,8 +23,7 @@ class ScriptedLLM:
         if isinstance(r, Exception):
             raise r
         finish = self.finish if isinstance(self.finish, str) else self.finish.pop(0)
-        return LLMResult(text=r, finish_reason=finish, model=model,
-                         usage=Usage(cache_hit=100, cache_miss=50, output=20, reasoning=5), cost_usd=0.001)
+        return LLMResult(text=r, finish_reason=finish, model=model, usage=self.usage, cost_usd=0.001)
 
     def check(self):
         pass
@@ -36,8 +36,8 @@ class EchoLLM:
         user = messages[-1]["content"]
         if isinstance(user, list):  # an image to transcribe
             text = "Figure: nerve supply\nMedian nerve: carpal tunnel\nUlnar nerve: Guyon's canal\nC5 → C6 → C7"
-            return LLMResult(text=text, finish_reason="stop", model=model,
-                             usage=Usage(cache_hit=0, cache_miss=900, output=60, reasoning=30), cost_usd=0.0003)
+            return LLMResult(text=text, finish_reason="stop", model=model,  # text and a full-size image's tokens
+                             usage=Usage(cache_hit=0, cache_miss=2500, output=60, reasoning=30), cost_usd=0.0003)
         request = re.search(r"<request>\n(.*?)\n</request>", user, re.S)
         if request:  # cards from the user's own prompt
             text = request.group(1)

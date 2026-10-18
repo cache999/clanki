@@ -27,7 +27,7 @@ from .ankiconnect import AnkiConnect, AnkiError, AnkiUnavailable, SendResult
 from .config import Config, save_config
 from .doctext import chunk_pages, document_text, page_texts
 from .generation import GENERATED_TAG, note_to_card, parse_cards, to_notes
-from .jobs import JobRunner
+from .jobs import JobRunner, is_refusal
 from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
 from .models import Document, Job, Note, Source
 from .prompts import DEFAULT_PROFILE, facet_vocabulary, list_profiles, load_profile
@@ -377,7 +377,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         model = pick_model(body.model)
         jobs = [runner.submit(Job(document_id=doc_id, source_id=s.id, mode="transcribe", profile=doc.profile,
                                   pages=(s.page, s.page), target="", model=model))
-                for s in srcs if body.force or not s.text.strip()]
+                for s in srcs if body.force or not s.text.strip() or is_refusal(s.text)]
         return {"jobs": [store.get_job(j.id) for j in jobs]}
 
     @app.get("/api/sources/{source_id}/image")

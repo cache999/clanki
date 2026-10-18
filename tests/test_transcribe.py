@@ -196,3 +196,50 @@ def test_transcribe_prompt_has_the_image_and_page_text():
     assert msgs[0]["role"] == "system" and "transcribe" in msgs[0]["content"].lower()
     text, image = msgs[1]["content"]
     assert "Carpal tunnel." in text["text"] and image["image_url"]["url"] == PNG_URL
+
+
+def big_png_url():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (1300, 1300), "white").save(buf, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+@pytest.mark.parametrize("refusal", ["NO_IMAGE", "The image is unsupported, so I cannot transcribe it.",
+                                     "I can't see any image attached."])
+def test_a_reply_that_never_saw_the_image_is_retried_then_fails(client, doc, llm, refusal):
+    llm["p"] = ScriptedLLM(refusal, refusal)
+    a = capture(client, doc)
+    [job] = read(client, doc, a)
+    assert job["status"] == "failed" and "did not receive the image" in job["error"] and job["attempts"] == 2
+    assert source(client, doc, a["id"])["text"] == ""  # nothing cached: T reads it again
+
+
+def test_one_missed_image_then_a_good_reply_is_fine(client, doc, llm):
+    llm["p"] = ScriptedLLM("NO_IMAGE", TRANSCRIPT)
+    a = capture(client, doc)
+    [job] = read(client, doc, a)
+    assert job["status"] == "done" and source(client, doc, a["id"])["text"] == TRANSCRIPT
+
+
+def test_too_few_prompt_tokens_for_a_large_image_means_it_was_not_read(client, doc, llm):
+    from clanki.llm import Usage
+    llm["p"] = ScriptedLLM("A transcript invented from the page text", "Another", usage=Usage(cache_hit=460, cache_miss=4, output=50, reasoning=0))  # about the text alone
+    [job] = read(client, doc, capture(client, doc, image=big_png_url()))
+    assert job["status"] == "failed" and "did not receive the image" in job["error"]
+
+
+def test_enough_prompt_tokens_for_a_large_image_is_accepted(client, doc, llm):
+    from clanki.llm import Usage
+    llm["p"] = ScriptedLLM(TRANSCRIPT, usage=Usage(cache_hit=0, cache_miss=2400, output=50, reasoning=0))
+    [job] = read(client, doc, capture(client, doc, image=big_png_url()))
+    assert job["status"] == "done"
+
+
+def test_a_refusal_cached_by_an_older_version_is_read_again(client, doc, llm):
+    a = capture(client, doc)
+    client.patch("/api/sources/%s" % a["id"], json={"text": "The image is unsupported, so I cannot transcribe it."})
+    llm["p"] = ScriptedLLM(TRANSCRIPT)
+    [job] = read(client, doc, a)
+    assert job["status"] == "done" and source(client, doc, a["id"])["text"] == TRANSCRIPT

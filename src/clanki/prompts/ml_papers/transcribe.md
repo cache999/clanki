@@ -9,3 +9,4 @@ You transcribe an image from a machine-learning paper (an equation, figure, plot
 - Labelled figures: one line per label, "label: what it points to", using only what the image shows.
 - All other text exactly as written. Add nothing the image does not show. Text you cannot read: [illegible]. No commentary, no preamble, no markdown headings or bold.
 - Text from the same page may be given: use it only to get names and notation right; transcribe the image alone.
+- If no image is attached, or you cannot see it, reply with exactly NO_IMAGE and nothing else; never transcribe from the page text alone.
