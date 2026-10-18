@@ -203,8 +203,12 @@ kbd {
 .pad { padding: 8px 10px; }
 .dialog {
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px;
-  width: min(560px, 92vw); display: grid; gap: 8px;
+  width: min(560px, 92vw); display: grid; gap: 8px; max-height: 90vh; overflow: auto;
 }
+.dialog .section { display: grid; gap: 6px; }
+.dialog .row label { flex: 1; }
+.dialog label.choice { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; color: var(--text); font-size: 14px; }
+.dialog .export-count { font-weight: 600; }
 .dialog h2 { margin: 2px 0; font-size: 18px; }
 .dialog h3 { margin: 8px 0 0; font-size: 14px; }
 .dialog p { margin: 0; }

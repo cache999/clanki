@@ -121,7 +121,7 @@ def test_document_without_text_cannot_be_generated(client):
 def test_settings_show_models_key_status_and_default(client):
     s = client.get("/api/settings").json()
     assert s["providers"]["deepseek"]["models"] == ["deepseek-flash", "deepseek-v4-pro"]
-    assert s["providers"]["deepseek"]["key"] == {"set": False, "source": None, "hint": None}
+    assert s["providers"]["deepseek"]["key"] == {"set": False, "source": None, "hint": None, "store": True}
     assert s["default_model"] == "deepseek-flash"
     assert client.put("/api/settings", json={"default_model": "deepseek-v4-pro"}).json()["default_model"] == "deepseek-v4-pro"
     assert client.put("/api/settings", json={"default_model": "nope"}).status_code == 422
@@ -135,7 +135,7 @@ def test_default_model_is_used_when_none_is_given(client, doc):
 
 def test_keys_are_stored_masked_and_never_returned(client):
     r = client.put("/api/settings/keys/deepseek", json={"key": "sk-secret-abcd"})
-    assert r.json() == {"set": True, "source": "keyring", "hint": "…abcd"}
+    assert r.json() == {"set": True, "source": "keyring", "hint": "…abcd", "store": True}
     assert "sk-secret" not in json.dumps(client.get("/api/settings").json())
     assert client.post("/api/settings/keys/deepseek/test").json() == {"ok": True, "error": None}
     client.delete("/api/settings/keys/deepseek")

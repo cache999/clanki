@@ -4,6 +4,7 @@ import re
 import shutil
 import tempfile
 import threading
+import tomllib
 from dataclasses import asdict
 from pathlib import Path
 
@@ -23,13 +24,13 @@ from . import keys as keystore
 from .anki_format import export_txt
 from .anki_index import AnkiIndex
 from .ankiconnect import AnkiConnect, AnkiError, AnkiUnavailable, SendResult
-from .config import Config
+from .config import Config, save_config
 from .doctext import chunk_pages, document_text, page_texts
 from .generation import GENERATED_TAG, note_to_card, parse_cards, to_notes
 from .jobs import JobRunner
 from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
 from .models import Document, Job, Note, Source
-from .prompts import facet_vocabulary, load_profile
+from .prompts import DEFAULT_PROFILE, facet_vocabulary, list_profiles, load_profile
 from .store import NOTE_BOOKKEEPING, NOTE_METADATA, Store
 from .validators import validate
 
@@ -145,6 +146,15 @@ def _replacement_patch(n: Note) -> dict:
 class SettingsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     default_model: str | None = None
+    # defaults for new documents, kept with the data
+    default_deck: str | None = None
+    default_tags: list[str] | None = None
+    default_profile: str | None = None
+    # this PC, written to config.toml; port and data_dir take effect after a restart
+    anki_url: str | None = None
+    soffice: str | None = None  # "" finds LibreOffice automatically
+    port: int | None = None
+    data_dir: str | None = None
 
 
 class KeyIn(BaseModel):
@@ -233,6 +243,14 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             raise HTTPException(404, "card not found")
         return n
 
+    def default_deck() -> str:
+        return store.get_setting("default_deck", cfg.default_deck) or cfg.default_deck
+
+    def new_document(**kw) -> Document:
+        doc = store.add_document(**kw)
+        tags = store.get_setting("default_tags", [])
+        return store.update_document(doc.id, {"tags": list(tags)}) if tags else doc
+
     def for_anki(doc: Document, n: Note) -> Note:
         return n.model_copy(update={"tags": doc.tags + n.tags, "deck": n.deck or doc.deck})
 
@@ -259,7 +277,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                     pdf = convert.to_pdf(src, Path(tmp) / "out", soffice=convert.find_soffice(cfg.soffice))
                 except convert.ConversionError as e:
                     raise HTTPException(422, str(e))
-            doc = store.add_document(title=name.stem, filename=name.name, kind=kind)
+            doc = new_document(title=name.stem, filename=name.name, kind=kind)
             (files / doc.id).mkdir(parents=True)
             shutil.move(str(pdf), files / doc.id / "document.pdf")
         return doc
@@ -271,7 +289,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             title, pdf = web.page_to_pdf(body.url.strip(), web_client)
         except web.WebError as e:
             raise HTTPException(422, str(e))
-        doc = store.add_document(title=title, filename=body.url.strip(), kind="web")
+        doc = new_document(title=title, filename=body.url.strip(), kind="web")
         (files / doc.id).mkdir(parents=True)
         (files / doc.id / "document.pdf").write_bytes(pdf)
         return doc
@@ -402,7 +420,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def export(doc_id: str, scope: str = "all"):
         doc = get_doc(doc_id)
         notes = [n for n in store.list_notes(doc_id) if scope == "all" or n.status != "sent"]
-        text = export_txt([for_anki(doc, n) for n in notes], default_deck=doc.deck or cfg.default_deck)
+        text = export_txt([for_anki(doc, n) for n in notes], default_deck=doc.deck or default_deck())
         fname = re.sub(r"[^A-Za-z0-9._ -]+", "_", doc.title).strip() or "clanki"
         return PlainTextResponse(text, headers={
             "Content-Disposition": 'attachment; filename="%s_anki.txt"' % fname})
@@ -427,7 +445,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                     chosen.append((doc, n))
         if body.preview:
             return {"cards": len(chosen), "with_errors": with_errors}
-        text = export_txt([for_anki(d, n) for d, n in chosen], default_deck=cfg.default_deck)
+        text = export_txt([for_anki(d, n) for d, n in chosen], default_deck=default_deck())
         if body.mark_exported:
             for _, n in chosen:
                 if n.anki_note_id is None and n.status in ("new", "edited"):
@@ -455,7 +473,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                 results[n.id] = SendResult(n.id, "failed", n.anki_note_id, "; ".join(errors))
             else:
                 ready.append(for_anki(doc, n))
-        for r in anki.send(ready, default_deck=doc.deck or cfg.default_deck):
+        for r in anki.send(ready, default_deck=doc.deck or default_deck()):
             results[r.note_id] = r
             if r.action in ("added", "updated"):
                 store.mark_sent(r.note_id, r.anki_note_id)
@@ -614,7 +632,19 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"],
                                            "key": keystore.key_status("deepseek")}},
                 "default_model": store.get_setting("default_model", DEFAULT_MODEL),
-                "facets": facet_vocabulary(facet_counts=facet_counts())}
+                "facets": facet_vocabulary(facet_counts=facet_counts()),
+                "defaults": {"deck": default_deck(), "tags": store.get_setting("default_tags", []),
+                             "profile": store.get_setting("default_profile", DEFAULT_PROFILE)},
+                "profiles": [{"name": x.name, "label": x.label} for x in list_profiles()],
+                "machine": machine()}
+
+    def machine() -> dict:
+        """This PC's settings as saved (port and data folder apply after a restart)."""
+        saved = tomllib.loads(cfg.config_path.read_text(encoding="utf-8")) if cfg.config_path and cfg.config_path.is_file() else {}
+        found = convert.find_soffice(cfg.soffice)
+        return {"config_path": str(cfg.config_path) if cfg.config_path else None, "anki_url": cfg.anki_url,
+                "soffice": cfg.soffice or "", "soffice_found": str(found) if found else None,
+                "port": saved.get("port", cfg.port), "data_dir": saved.get("data_dir", str(cfg.data_dir))}
 
     @app.get("/api/settings")
     def get_settings():
@@ -622,9 +652,32 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
 
     @app.put("/api/settings")
     def put_settings(body: SettingsIn):
+        if body.default_profile is not None and body.default_profile not in {x.name for x in list_profiles()}:
+            raise HTTPException(422, "unknown profile %r" % body.default_profile)
+        here = body.model_dump(include={"anki_url", "soffice", "port", "data_dir"}, exclude_none=True)
+        if here and cfg.config_path is None:
+            raise HTTPException(422, "clanki was started without a config file")
+        if "anki_url" in here and not re.match(r"https?://\S+$", here["anki_url"]):
+            raise HTTPException(422, "the Anki address starts with http://, e.g. http://127.0.0.1:8765")
+        if here.get("soffice") and not Path(here["soffice"]).is_file():
+            raise HTTPException(422, "no LibreOffice program at %s" % here["soffice"])
+        if "port" in here and not 1024 <= here["port"] <= 65535:
+            raise HTTPException(422, "choose a port between 1024 and 65535")
+        if "data_dir" in here and not Path(here["data_dir"]).is_absolute():
+            raise HTTPException(422, "give the data folder as a full path")
+        restart = any(k in here and here[k] != machine()[k] for k in ("port", "data_dir"))
+        if here:
+            save_config(cfg.config_path, {k: (v or None) if k == "soffice" else v for k, v in here.items()})
+        if "anki_url" in here:
+            cfg.anki_url = anki.url = here["anki_url"]
+        if "soffice" in here:
+            cfg.soffice = here["soffice"] or None
+        for key in ("default_deck", "default_tags", "default_profile"):
+            if getattr(body, key) is not None:
+                store.set_setting(key, getattr(body, key))
         if body.default_model is not None:
             store.set_setting("default_model", pick_model(body.default_model))
-        return settings()
+        return {**settings(), "restart": restart}
 
     @app.put("/api/settings/keys/{provider}")
     def put_key(provider: str, body: KeyIn):

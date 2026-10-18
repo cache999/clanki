@@ -107,13 +107,37 @@ export type Estimate = {
   peak: boolean;
 };
 
-export type KeyStatus = { set: boolean; source: "env" | "keyring" | null; hint: string | null };
+/** store: false where there is no credential store (WSL), so only the environment variable works. */
+export type KeyStatus = { set: boolean; source: "env" | "keyring" | null; hint: string | null; store: boolean };
 export type Settings = {
   providers: { deepseek: { models: string[]; key: KeyStatus } };
   default_model: string;
   /** The subquestion vocabulary the prompt uses: the profile's, plus the student's frequent ones. */
   facets: string[];
+  /** For new documents; kept with the data. */
+  defaults: { deck: string; tags: string[]; profile: string };
+  profiles: { name: string; label: string }[];
+  /** This PC (config.toml); port and data_dir apply after a restart. */
+  machine: {
+    config_path: string | null;
+    anki_url: string;
+    soffice: string;
+    soffice_found: string | null;
+    port: number;
+    data_dir: string;
+  };
 };
+
+export type SettingsPatch = Partial<{
+  default_model: string;
+  default_deck: string;
+  default_tags: string[];
+  default_profile: string;
+  anki_url: string;
+  soffice: string;
+  port: number;
+  data_dir: string;
+}>;
 
 export type GenerateBody = {
   mode: "selection" | "document";
@@ -237,7 +261,7 @@ export const api = {
   discardJob: (id: string) => call<Job>("POST", `/api/jobs/${id}/discard`),
 
   settings: () => call<Settings>("GET", "/api/settings"),
-  putSettings: (s: { default_model: string }) => call<Settings>("PUT", "/api/settings", s),
+  putSettings: (s: SettingsPatch) => call<Settings & { restart: boolean }>("PUT", "/api/settings", s),
   putKey: (provider: string, key: string) => call<KeyStatus>("PUT", `/api/settings/keys/${provider}`, { key }),
   deleteKey: (provider: string) => call<KeyStatus>("DELETE", `/api/settings/keys/${provider}`),
   testKey: (provider: string) =>

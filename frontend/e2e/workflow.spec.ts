@@ -143,7 +143,7 @@ test("generate cards with the LLM", async ({ page }) => {
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings.locator(".key-status")).toContainText("not set");
   await settings.locator('input[type="password"]').fill("sk-test-abcd");
-  await settings.getByRole("button", { name: "Save" }).click();
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
   await expect(settings.locator(".key-status")).toContainText("credential store (…abcd)");
   await settings.getByRole("button", { name: "Test" }).click();
   await expect(settings).toContainText("The key works");
@@ -371,4 +371,24 @@ test("exported cards are marked, and Send to Anki skips them", async ({ page, re
   await page.keyboard.press("s");
   await expect(page.locator(".toast")).toContainText("already up to date");
   await expect(c.locator(".status")).toHaveText("exported");
+});
+
+test("settings: defaults for new documents, and this computer's settings", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  await page.keyboard.press(",");
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const defaults = dialog.locator(".defaults");
+  await defaults.getByLabel("Tags").fill("e2e-default year2");
+  await defaults.getByRole("button", { name: "Save defaults" }).click();
+  await expect(dialog).toContainText("Defaults saved");
+  // this e2e server runs without a config file, so this PC's settings are shown but not editable
+  const address = dialog.locator(".machine").getByLabel("Anki address");
+  await expect(address).toHaveValue("http://127.0.0.1:18765");
+  await expect(address).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await page.locator('input[type="file"]').setInputFiles(FIXTURE);
+  await expect(page.locator(".textLayer span", { hasText: "Rhodopsin" }).first()).toBeVisible();
+  await expect(page.locator(".docfield", { hasText: "Tags" }).locator("input")).toHaveValue("e2e-default year2");
 });

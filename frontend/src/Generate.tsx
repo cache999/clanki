@@ -10,7 +10,9 @@ import {
   type HistoryEntry,
   type Job,
   type Settings,
+  type SettingsPatch,
 } from "./api";
+import { parseTags } from "./text";
 import { jobSummary, money, pagesLabel } from "./jobs";
 
 const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image" };
@@ -242,31 +244,31 @@ export function ExportDialog(p: {
       >
         <h2>Export an Anki import file</h2>
         <div className="row">
-          <label>
+          <label className="choice">
             <input type="radio" checked={scope === "unsent"} onChange={() => setScope("unsent")} autoFocus /> New and edited
           </label>
-          <label>
+          <label className="choice">
             <input type="radio" checked={scope === "all"} onChange={() => setScope("all")} /> All cards
           </label>
         </div>
         <div className="row">
-          <label>
+          <label className="choice">
             <input type="checkbox" checked={qa} onChange={(e) => setQa(e.target.checked)} /> Q/A cards
           </label>
-          <label>
+          <label className="choice">
             <input type="checkbox" checked={lists} onChange={(e) => setLists(e.target.checked)} /> Lists
           </label>
           <input value={tag} placeholder="only this tag (e.g. NHB)" onChange={(e) => setTag(e.target.value)} />
         </div>
         <div className="row">
-          <label>
+          <label className="choice">
             <input type="radio" checked={!all} onChange={() => setAll(false)} /> {p.doc.title}
           </label>
-          <label>
+          <label className="choice">
             <input type="radio" checked={all} onChange={() => setAll(true)} /> All documents ({p.allDocIds.length})
           </label>
         </div>
-        <label>
+        <label className="choice">
           <input type="checkbox" checked={mark} onChange={(e) => setMark(e.target.checked)} /> Mark them exported, so Send
           to Anki skips them (import the file in Anki: File ▸ Import)
         </label>
@@ -316,6 +318,86 @@ export function HistoryPanel(p: { docId: string; version: unknown; onPick(e: His
   );
 }
 
+function Defaults(p: { settings: Settings; onSave(patch: SettingsPatch): void }) {
+  const d = p.settings.defaults;
+  const [deck, setDeck] = useState(d.deck);
+  const [tags, setTags] = useState(d.tags.join(" "));
+  const [profile, setProfile] = useState(d.profile);
+  return (
+    <div className="defaults section">
+      <h3>For new documents</h3>
+      <div className="row">
+        <label>
+          Deck
+          <input value={deck} list="decks" onChange={(e) => setDeck(e.target.value)} />
+        </label>
+        <label>
+          Tags
+          <input value={tags} placeholder="space-separated" onChange={(e) => setTags(e.target.value)} />
+        </label>
+        <label>
+          Profile
+          <select value={profile} onChange={(e) => setProfile(e.target.value)}>
+            {p.settings.profiles.map((x) => (
+              <option key={x.name} value={x.name}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div>
+        <button onClick={() => p.onSave({ default_deck: deck.trim(), default_tags: parseTags(tags), default_profile: profile })}>
+          Save defaults
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Machine(p: { settings: Settings; onSave(patch: SettingsPatch): void }) {
+  const m = p.settings.machine;
+  const [anki, setAnki] = useState(m.anki_url);
+  const [soffice, setSoffice] = useState(m.soffice);
+  const [port, setPort] = useState(String(m.port));
+  const [dataDir, setDataDir] = useState(m.data_dir);
+  const editable = m.config_path !== null;
+  return (
+    <div className="machine section">
+      <h3>This computer</h3>
+      <div className="row">
+        <label>
+          Anki address (AnkiConnect)
+          <input value={anki} disabled={!editable} onChange={(e) => setAnki(e.target.value)} />
+        </label>
+        <label>
+          Port
+          <input value={port} disabled={!editable} inputMode="numeric" onChange={(e) => setPort(e.target.value)} />
+        </label>
+      </div>
+      <label>
+        LibreOffice program (for PPTX and DOCX; empty finds it)
+        <input value={soffice} disabled={!editable} placeholder={m.soffice_found ?? "not found"} onChange={(e) => setSoffice(e.target.value)} />
+      </label>
+      <p className="muted small">{m.soffice_found ? `Using ${m.soffice_found}` : "LibreOffice not found: PPTX and DOCX can't be opened."}</p>
+      <label>
+        Data folder (documents and cards; e.g. a OneDrive folder, used by one PC at a time)
+        <input value={dataDir} disabled={!editable} onChange={(e) => setDataDir(e.target.value)} />
+      </label>
+      {editable ? (
+        <div>
+          <button onClick={() => p.onSave({ anki_url: anki.trim(), soffice: soffice.trim(), port: Number(port), data_dir: dataDir.trim() })}>
+            Save for this computer
+          </button>{" "}
+          <span className="muted small">in {m.config_path}; port and data folder apply after a restart</span>
+        </div>
+      ) : (
+        <p className="muted small">clanki was started without a config file, so these can't be changed here.</p>
+      )}
+    </div>
+  );
+}
+
 /** What clanki knows of the Anki collection, for duplicate warnings. */
 export function indexLine(index: AnkiIndexSummary | undefined): string {
   if (!index?.refreshed_at) return "clanki has not read your Anki cards yet: duplicate warnings start once Anki is open.";
@@ -334,11 +416,11 @@ export function SettingsDialog(p: {
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const run = async (f: () => Promise<unknown>, ok: string) => {
+  const run = async <T,>(f: () => Promise<T>, ok: string | ((r: T) => string)) => {
     try {
-      await f();
+      const r = await f();
       p.onChange(await api.settings());
-      setMsg({ text: ok, ok: true });
+      setMsg({ text: typeof ok === "string" ? ok : ok(r), ok: true });
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
     }
@@ -363,6 +445,12 @@ export function SettingsDialog(p: {
         <h2>Settings</h2>
         <h3>DeepSeek API key</h3>
         <p className="key-status">Key: {status}</p>
+        {!ds.key.store ? (
+          <p className="muted small">
+            This system has no credential store (WSL), so set the DEEPSEEK_API_KEY environment variable and restart clanki
+            (see the README).
+          </p>
+        ) : (
         <div className="row">
           <input
             ref={input}
@@ -391,6 +479,7 @@ export function SettingsDialog(p: {
             Remove
           </button>
         </div>
+        )}
         {msg && <p className={msg.ok ? "ok" : "bad"}>{msg.text}</p>}
         <p className="muted small">
           Keys are kept in Windows Credential Manager (never in clanki's files). An environment variable takes
@@ -406,6 +495,16 @@ export function SettingsDialog(p: {
           ))}
         </select>
         <p className="muted small">deepseek-flash is cheapest; deepseek-v4-pro is stronger and about 4× the price.</p>
+        <Defaults settings={p.settings} onSave={(patch) => run(() => api.putSettings(patch), "Defaults saved")} />
+        <Machine
+          settings={p.settings}
+          onSave={(patch) =>
+            run(
+              () => api.putSettings(patch),
+              (r) => (r.restart ? "Saved: restart clanki for the new port or data folder to take effect" : "Saved"),
+            )
+          }
+        />
         <h3>Anki</h3>
         <p>{indexLine(p.anki?.index)}</p>
         <div className="row">
