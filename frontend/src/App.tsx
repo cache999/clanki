@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
 import { sourceLabel } from "./figure";
-import { DocumentConfirm, FocusBox, HistoryPanel, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
+import { DocumentConfirm, ExportDialog, FocusBox, HistoryPanel, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
 import { Help } from "./Help";
 import { jobSummary, money, openEdits, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
@@ -38,6 +38,7 @@ export function App() {
   const [draft, setDraft] = useState<(NoteDraft & { sel?: ReaderSelection }) | null>(null);
   const [selection, setSelection] = useState<ReaderSelection | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<Toast | null>(null);
@@ -448,8 +449,7 @@ export function App() {
       case "send":
         return void send();
       case "export":
-        if (doc) window.location.href = api.exportUrl(doc.id);
-        return;
+        return doc ? setExportOpen(true) : say("Open a document first (O)");
       case "open":
         return fileInput.current?.click();
       case "openUrl":
@@ -474,7 +474,7 @@ export function App() {
         }
         return;
       }
-      if (help || settingsOpen || docConfirm) return;
+      if (help || settingsOpen || docConfirm || exportOpen) return;
       const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen || askingFor !== null);
       if (c) {
         e.preventDefault();
@@ -483,9 +483,9 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen]);
 
-  const pending = notes.filter((n) => n.status !== "sent").length;
+  const pending = notes.filter((n) => n.status === "new" || n.status === "edited").length;
   return (
     <div
       className="app"
@@ -679,6 +679,18 @@ export function App() {
           version={notes}
           onPick={(e) => void step(e.undone ? "redo" : "undo", e.id)}
           onClose={() => setHistoryOpen(false)}
+        />
+      )}
+      {exportOpen && doc && (
+        <ExportDialog
+          doc={doc}
+          allDocIds={docs.map((d) => d.id)}
+          onDone={(r) => {
+            setExportOpen(false);
+            say(`Exported ${r.cards} card${r.cards === 1 ? "" : "s"} to ${r.name}${r.marked ? " · marked exported, so Send skips them" : ""}`);
+            void refresh(doc.id);
+          }}
+          onClose={() => setExportOpen(false)}
         />
       )}
       {docConfirm && (

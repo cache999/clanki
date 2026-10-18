@@ -21,7 +21,7 @@ export type Note = {
   why: string;
   deck: string;
   tags: string[];
-  status: "new" | "sent" | "edited";
+  status: "new" | "sent" | "edited" | "exported"; // exported: imported into Anki from an export file
   anki_note_id: number | null;
   created_at: string;
   kind: string;
@@ -154,17 +154,36 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
     init.headers = { "Content-Type": "application/json" };
   }
   const r = await fetch(url, init);
-  if (!r.ok) {
-    let msg = r.statusText;
-    try {
-      const d = (await r.json()).detail;
-      msg = typeof d === "string" ? d : JSON.stringify(d);
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(r.status, msg);
-  }
+  if (!r.ok) throw await failure(r);
   return r.json() as Promise<T>;
+}
+
+async function failure(r: Response): Promise<ApiError> {
+  let msg = r.statusText;
+  try {
+    const d = (await r.json()).detail;
+    msg = typeof d === "string" ? d : JSON.stringify(d);
+  } catch {
+    /* not JSON */
+  }
+  return new ApiError(r.status, msg);
+}
+
+/** What to export: unsent is new and edited cards; tag matches the card's or its document's tags
+ * (NHB matches NHB::vision); mark_exported makes Send skip them afterwards. */
+export type ExportOptions = {
+  document_ids: string[];
+  scope: "unsent" | "all";
+  types: ("qa" | "list")[];
+  tag: string;
+  mark_exported: boolean;
+};
+
+async function exportFile(o: ExportOptions): Promise<{ blob: Blob; name: string; cards: number }> {
+  const r = await fetch("/api/export", { method: "POST", body: JSON.stringify(o), headers: { "Content-Type": "application/json" } });
+  if (!r.ok) throw await failure(r);
+  const name = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") ?? "")?.[1] ?? "clanki_anki.txt";
+  return { blob: await r.blob(), name, cards: Number(r.headers.get("x-clanki-cards") ?? 0) };
 }
 
 export const api = {
@@ -174,6 +193,8 @@ export const api = {
   redo: (docId: string, to?: number) =>
     call<StepResult>("POST", `/api/documents/${docId}/redo${to === undefined ? "" : `?to=${to}`}`),
   history: (docId: string) => call<HistoryEntry[]>("GET", `/api/documents/${docId}/history`),
+  exportPreview: (o: ExportOptions) => call<{ cards: number; with_errors: number }>("POST", "/api/export", { ...o, preview: true }),
+  exportFile,
   openUrl: (url: string) => call<Doc>("POST", "/api/documents/url", { url }),
   upload: (file: File) => {
     const fd = new FormData();
@@ -184,7 +205,6 @@ export const api = {
     call<Doc>("PATCH", `/api/documents/${id}`, patch),
   deleteDocument: (id: string) => call<unknown>("DELETE", `/api/documents/${id}`),
   pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
-  exportUrl: (id: string, scope: "all" | "unsent" = "all") => `/api/documents/${id}/export.txt?scope=${scope}`,
 
   sources: (docId: string) => call<Source[]>("GET", `/api/documents/${docId}/sources`),
   addSource: (docId: string, s: Pick<Source, "page" | "text" | "rects">) =>

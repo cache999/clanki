@@ -132,6 +132,7 @@ kbd {
 .status.st-new { color: var(--accent); }
 .status.st-edited { color: var(--warn); }
 .status.st-sent { color: var(--ok); }
+.status.st-exported { color: var(--ok); font-style: italic; }
 .chip { font-size: 11px; padding: 0 6px; border-radius: 8px; }
 .front { font-weight: 600; margin-top: 2px; }
 .back { margin-top: 1px; }

@@ -40,6 +40,7 @@ export function Cards(p: Props) {
   const counts = {
     new: p.notes.filter((n) => n.status === "new").length,
     edited: p.notes.filter((n) => n.status === "edited").length,
+    exported: p.notes.filter((n) => n.status === "exported").length,
     issues: p.notes.filter((n) => n.issues.length).length,
   };
   return (
@@ -47,7 +48,8 @@ export function Cards(p: Props) {
       <div className="cards-bar">
         <b>{p.notes.length} cards</b>
         <span className="muted">
-          {counts.new} new · {counts.edited} edited{counts.issues ? ` · ⚠ ${counts.issues}` : ""}
+          {counts.new} new · {counts.edited} edited{counts.exported ? ` · ${counts.exported} exported` : ""}
+          {counts.issues ? ` · ⚠ ${counts.issues}` : ""}
         </span>
       </div>
       {p.draft && (

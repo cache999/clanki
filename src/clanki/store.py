@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS jobs_doc ON jobs(document_id);
 
 DOCUMENT_EDITABLE = {"title", "deck", "tags"}
 NOTE_BOOKKEEPING = {"id", "guid", "document_id", "status", "deleted", "anki_note_id",
-                    "created_at", "updated_at", "sent_at"}
+                    "created_at", "updated_at", "sent_at", "exported_at"}
 NOTE_METADATA = {"flags", "kind", "facets", "source_id"}  # stay in clanki; never sent to Anki
 
 
@@ -215,13 +215,16 @@ class Store:
         if n is None:
             return None
         changed = any(getattr(n, k) != v for k, v in patch.items() if k not in NOTE_METADATA)
-        status = "edited" if changed and n.status == "sent" else n.status
+        status = "edited" if changed and n.status in ("sent", "exported") else n.status
         if changed and "flags" not in patch:
             patch = {**patch, "flags": []}  # an edited card has been reviewed
         return self._replace(note_id, **patch, status=status)
 
     def mark_sent(self, note_id: str, anki_note_id: int) -> Note | None:
         return self._replace(note_id, status="sent", anki_note_id=anki_note_id, sent_at=_now())
+
+    def mark_exported(self, note_id: str) -> Note | None:
+        return self._replace(note_id, status="exported", exported_at=_now())
 
     def delete_note(self, note_id: str) -> Note | None:
         return self._replace(note_id, deleted=True)
@@ -307,9 +310,9 @@ class Store:
             return int(cur.anki_note_id is not None)
         target = Note.model_validate(snapshot)
         if cur is not None:
-            keep = {k: getattr(cur, k) for k in ("guid", "anki_note_id", "sent_at", "created_at")}
+            keep = {k: getattr(cur, k) for k in ("guid", "anki_note_id", "sent_at", "exported_at", "created_at")}
             status = target.status
-            if cur.anki_note_id is not None:
+            if cur.anki_note_id is not None or cur.exported_at is not None:
                 changed = _content(target) != _content(cur)
                 status = "edited" if changed or cur.status == "edited" else cur.status
             target = target.model_copy(update={**keep, "status": status})

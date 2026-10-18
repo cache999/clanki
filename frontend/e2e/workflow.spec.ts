@@ -105,9 +105,16 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await page.keyboard.press("z");
   await expect(card(page, "Card without an answer")).toHaveCount(1);
 
-  // export
-  const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Shift+E")]);
+  // export: Shift+E shows what will be exported; Enter downloads it
+  await page.keyboard.press("Shift+E");
+  const dialog = page.getByRole("dialog", { name: "Export" });
+  await expect(dialog.locator(".export-count")).toHaveText("0 cards · 1 with errors left out (fix them first)");
+  await dialog.getByLabel("All cards").check(); // the rest are already in Anki
+  await expect(dialog.locator(".export-count")).toContainText(/[1-9] cards/);
+  await dialog.getByLabel("Mark them exported").uncheck();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);
   expect(download.suggestedFilename()).toBe("vision_test_anki.txt");
+  await expect(page.locator(".toast")).toContainText("Exported");
   const text = readFileSync((await download.path())!, "utf-8");
   expect(text.split("\n")[2]).toBe("#guid column:1");
   expect(text).toContain("~498 nm (blue-green)<br>(r: visual pigment with this peak?)");
@@ -341,4 +348,27 @@ test("undo and redo any change, and undo back through the history", async ({ pag
   await expect(rows.first()).toHaveClass(/undone/);
   await page.keyboard.press("Escape");
   await expect(page.locator(".history")).toHaveCount(0);
+});
+
+test("exported cards are marked, and Send to Anki skips them", async ({ page, request }) => {
+  const docs = await (await request.get("/api/documents")).json();
+  const docId = docs[docs.length - 1].id;
+  await request.post(`/api/documents/${docId}/notes`, { data: { type: "qa", front: "Export test card", back: "exported" } });
+  await page.goto("/");
+  const c = card(page, "Export test card");
+  await expect(c.locator(".status")).toHaveText("new");
+
+  await page.keyboard.press("Shift+E");
+  const dialog = page.getByRole("dialog", { name: "Export" });
+  await dialog.getByPlaceholder("only this tag").fill("nonexistent-tag");
+  await expect(dialog.locator(".export-count")).toHaveText("0 cards");
+  await dialog.getByPlaceholder("only this tag").fill("");
+  await expect(dialog.locator(".export-count")).toContainText(/[1-9]\d* cards?/);
+  await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Export" }).click()]);
+  await expect(page.locator(".toast")).toContainText("marked exported");
+  await expect(c.locator(".status")).toHaveText("exported");
+
+  await page.keyboard.press("s");
+  await expect(page.locator(".toast")).toContainText("already up to date");
+  await expect(c.locator(".status")).toHaveText("exported");
 });

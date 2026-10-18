@@ -84,6 +84,15 @@ class UrlIn(BaseModel):
     url: str
 
 
+class ExportIn(BaseModel):
+    document_ids: list[str]
+    scope: Literal["unsent", "all"] = "unsent"  # unsent: new and edited cards
+    types: list[Literal["qa", "list"]] = ["qa", "list"]
+    tag: str = ""  # this tag or one under it (NHB matches NHB::vision), on the card or its document
+    mark_exported: bool = True
+    preview: bool = False  # only count
+
+
 IMAGE_TYPES = {b"\x89PNG\r\n\x1a\n": "png", b"\xff\xd8\xff": "jpg", b"GIF8": "gif", b"RIFF": "webp"}
 MAX_IMAGE_BYTES = 20_000_000
 
@@ -398,16 +407,51 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         return PlainTextResponse(text, headers={
             "Content-Disposition": 'attachment; filename="%s_anki.txt"' % fname})
 
+    @app.post("/api/export")
+    def export_cards(body: ExportIn):
+        """An import file of the chosen cards (cards with errors are left out); marks the new and
+        edited ones exported, so Send skips them."""
+        docs = [get_doc(d) for d in body.document_ids]
+        tag = body.tag.strip().lower()
+        chosen, with_errors = [], 0
+        for doc in docs:
+            notes = store.list_notes(doc.id)
+            for n, iss in zip(notes, validate(notes)):
+                tags = [t.lower() for t in doc.tags + n.tags]
+                if (n.type not in body.types or (body.scope == "unsent" and n.status not in ("new", "edited"))
+                        or (tag and not any(t == tag or t.startswith(tag + "::") for t in tags))):
+                    continue
+                if any(i.level == "error" for i in iss):
+                    with_errors += 1
+                else:
+                    chosen.append((doc, n))
+        if body.preview:
+            return {"cards": len(chosen), "with_errors": with_errors}
+        text = export_txt([for_anki(d, n) for d, n in chosen], default_deck=cfg.default_deck)
+        if body.mark_exported:
+            for _, n in chosen:
+                if n.anki_note_id is None and n.status in ("new", "edited"):
+                    store.mark_exported(n.id)
+        name = re.sub(r"[^A-Za-z0-9._ -]+", "_", docs[0].title).strip() if len(docs) == 1 else "clanki"
+        return PlainTextResponse(text, headers={"Content-Disposition": 'attachment; filename="%s_anki.txt"' % (name or "clanki"),
+                                                "X-Clanki-Cards": str(len(chosen))})
+
     @app.post("/api/documents/{doc_id}/send")
     def send(doc_id: str):
-        """Send new and edited cards to Anki. Cards with errors stay in clanki."""
+        """Send new and edited cards to Anki. Cards with errors stay in clanki; cards imported from an
+        export file are not sent (an edited one is updated by exporting it again)."""
         doc = get_doc(doc_id)
         notes = store.list_notes(doc_id)
         results: dict[str, SendResult] = {}
         ready = []
         for n, iss in zip(notes, validate(notes)):
             errors = [i.message for i in iss if i.level == "error"]
-            if errors and n.status != "sent":
+            if n.status == "exported":
+                results[n.id] = SendResult(n.id, "skipped")
+            elif n.exported_at and n.anki_note_id is None:
+                results[n.id] = SendResult(n.id, "failed", None, "This card was imported into Anki from an export "
+                                           "file: export it again (Shift+E) to update it there")
+            elif errors and n.status != "sent":
                 results[n.id] = SendResult(n.id, "failed", n.anki_note_id, "; ".join(errors))
             else:
                 ready.append(for_anki(doc, n))

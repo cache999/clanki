@@ -44,12 +44,15 @@ class Note(BaseModel):
     facets: list[str] = Field(default_factory=list)
     flags: list[str] = Field(default_factory=list)
     # bookkeeping
-    status: Literal["new", "sent", "edited"] = "new"
+    # exported: written to an import file and (assumed) imported into Anki, so Send skips it; an
+    # edit makes it "edited", and exporting again updates it in Anki through its guid
+    status: Literal["new", "sent", "edited", "exported"] = "new"
     deleted: bool = False
     anki_note_id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
     sent_at: str | None = None
+    exported_at: str | None = None
 
 
 class Document(BaseModel):

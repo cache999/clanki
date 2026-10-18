@@ -1,6 +1,16 @@
 // Generation UI: focus box, whole-document confirmation, jobs panel, settings dialog.
 import { useEffect, useRef, useState } from "react";
-import { api, type AnkiIndexSummary, type AnkiStatus, type Estimate, type HistoryEntry, type Job, type Settings } from "./api";
+import {
+  api,
+  type AnkiIndexSummary,
+  type AnkiStatus,
+  type Doc,
+  type Estimate,
+  type ExportOptions,
+  type HistoryEntry,
+  type Job,
+  type Settings,
+} from "./api";
 import { jobSummary, money, pagesLabel } from "./jobs";
 
 const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image" };
@@ -173,6 +183,105 @@ export function JobsPanel(p: {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Export filters, with a live count. Enter exports, Esc closes. */
+export function ExportDialog(p: {
+  doc: Doc;
+  allDocIds: string[];
+  onDone(r: { cards: number; name: string; marked: boolean }): void;
+  onClose(): void;
+}) {
+  const [scope, setScope] = useState<ExportOptions["scope"]>("unsent");
+  const [qa, setQa] = useState(true);
+  const [lists, setLists] = useState(true);
+  const [tag, setTag] = useState("");
+  const [all, setAll] = useState(false);
+  const [mark, setMark] = useState(true);
+  const [count, setCount] = useState<{ cards: number; with_errors: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const opts: ExportOptions = {
+    document_ids: all ? p.allDocIds : [p.doc.id],
+    scope,
+    types: [...(qa ? ["qa" as const] : []), ...(lists ? ["list" as const] : [])],
+    tag,
+    mark_exported: mark,
+  };
+  const key = JSON.stringify(opts);
+  useEffect(() => {
+    void api.exportPreview(opts).then(setCount, () => setCount(null));
+  }, [key]);
+  async function go() {
+    if (!count?.cards) return;
+    try {
+      const r = await api.exportFile(opts);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(r.blob);
+      a.download = r.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000); // revoking at once can cancel the download
+      p.onDone({ cards: r.cards, name: r.name, marked: mark });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  return (
+    <div className="overlay" onClick={p.onClose}>
+      <div
+        className="dialog export"
+        role="dialog"
+        aria-label="Export"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") p.onClose();
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "BUTTON") void go();
+        }}
+      >
+        <h2>Export an Anki import file</h2>
+        <div className="row">
+          <label>
+            <input type="radio" checked={scope === "unsent"} onChange={() => setScope("unsent")} autoFocus /> New and edited
+          </label>
+          <label>
+            <input type="radio" checked={scope === "all"} onChange={() => setScope("all")} /> All cards
+          </label>
+        </div>
+        <div className="row">
+          <label>
+            <input type="checkbox" checked={qa} onChange={(e) => setQa(e.target.checked)} /> Q/A cards
+          </label>
+          <label>
+            <input type="checkbox" checked={lists} onChange={(e) => setLists(e.target.checked)} /> Lists
+          </label>
+          <input value={tag} placeholder="only this tag (e.g. NHB)" onChange={(e) => setTag(e.target.value)} />
+        </div>
+        <div className="row">
+          <label>
+            <input type="radio" checked={!all} onChange={() => setAll(false)} /> {p.doc.title}
+          </label>
+          <label>
+            <input type="radio" checked={all} onChange={() => setAll(true)} /> All documents ({p.allDocIds.length})
+          </label>
+        </div>
+        <label>
+          <input type="checkbox" checked={mark} onChange={(e) => setMark(e.target.checked)} /> Mark them exported, so Send
+          to Anki skips them (import the file in Anki: File ▸ Import)
+        </label>
+        <p className="export-count">
+          {count ? `${count.cards} card${count.cards === 1 ? "" : "s"}` : "…"}
+          {count?.with_errors ? ` · ${count.with_errors} with errors left out (fix them first)` : ""}
+        </p>
+        {error && <p className="bad">{error}</p>}
+        <div className="dialog-actions">
+          <button disabled={!count?.cards} onClick={() => void go()}>
+            Export
+          </button>
+          <button onClick={p.onClose}>Cancel</button> <span className="muted">Enter · Esc</span>
+        </div>
+      </div>
     </div>
   );
 }
