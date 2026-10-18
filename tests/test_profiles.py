@@ -120,3 +120,10 @@ def test_jobs_use_the_documents_profile(env):
     assert env["llm"].calls[0]["messages"][0]["content"] == load_profile("ml_papers").system
     again = c.post("/api/jobs/%s/left-out/0" % job["id"]).json()
     assert again["focus"] == load_profile("ml_papers").left_out_focus and again["profile"] == "ml_papers"
+
+
+def test_the_general_profile_is_for_anyone():
+    p = load_profile("general")
+    text = (p.system + p.transcribe + p.scope_none + p.left_out_focus).lower()
+    for personal in ("student", "engineering", "uk spelling", "ukmla"):
+        assert personal not in text, personal

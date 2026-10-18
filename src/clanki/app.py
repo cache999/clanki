@@ -638,6 +638,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                 "defaults": {"deck": default_deck(), "tags": store.get_setting("default_tags", []),
                              "profile": store.get_setting("default_profile", DEFAULT_PROFILE)},
                 "profiles": [{"name": x.name, "label": x.label, "left_out_label": x.left_out_label} for x in list_profiles()],
+                "llm_notice_accepted": store.get_setting("llm_notice_accepted_at") is not None,
                 "machine": machine()}
 
     def machine() -> dict:
@@ -680,6 +681,12 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         if body.default_model is not None:
             store.set_setting("default_model", pick_model(body.default_model))
         return {**settings(), "restart": restart}
+
+    @app.post("/api/settings/llm-notice")
+    def accept_llm_notice():
+        """The user has read that the AI features send content to a third party (shown once)."""
+        store.set_setting("llm_notice_accepted_at", datetime.now(timezone.utc).isoformat())
+        return settings()
 
     @app.put("/api/settings/keys/{provider}")
     def put_key(provider: str, body: KeyIn):

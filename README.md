@@ -21,7 +21,9 @@ All milestones are built (3, the prompt-quality loop, was skipped). clanki has:
 Update with `update.bat`. Anki must be open to send cards; without it, use Export .txt and
 File ▸ Import in Anki.
 
-For generation, add a [DeepSeek API key](https://platform.deepseek.com/api_keys) in Settings (`,`):
+The AI features send the document's text (and any figure you select) to DeepSeek, a third-party
+service; the first time you use one, clanki shows a one-time notice about sharing material you may
+not have the right to share. For generation, add a [DeepSeek API key](https://platform.deepseek.com/api_keys) in Settings (`,`):
 it is stored in Windows Credential Manager. A `DEEPSEEK_API_KEY` environment variable takes
 precedence (that is how WSL development works: see below).
 

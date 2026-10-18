@@ -119,6 +119,8 @@ export type Settings = {
   /** For new documents; kept with the data. */
   defaults: { deck: string; tags: string[]; profile: string };
   profiles: { name: string; label: string; left_out_label: string }[];
+  /** The one-time notice that the AI features send content to a third party has been accepted. */
+  llm_notice_accepted: boolean;
   /** This PC (config.toml); port and data_dir apply after a restart. */
   machine: {
     config_path: string | null;
@@ -263,6 +265,7 @@ export const api = {
   discardJob: (id: string) => call<Job>("POST", `/api/jobs/${id}/discard`),
 
   settings: () => call<Settings>("GET", "/api/settings"),
+  acceptLlmNotice: () => call<Settings>("POST", "/api/settings/llm-notice"),
   putSettings: (s: SettingsPatch) => call<Settings & { restart: boolean }>("PUT", "/api/settings", s),
   putKey: (provider: string, key: string) => call<KeyStatus>("PUT", `/api/settings/keys/${provider}`, { key }),
   deleteKey: (provider: string) => call<KeyStatus>("DELETE", `/api/settings/keys/${provider}`),

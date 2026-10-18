@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
 import { sourceLabel } from "./figure";
-import { DocumentConfirm, ExportDialog, FocusBox, HistoryPanel, indexLine, JobsPanel, SettingsDialog, SnippetBox } from "./Generate";
+import {
+  DocumentConfirm,
+  ExportDialog,
+  FocusBox,
+  HistoryPanel,
+  indexLine,
+  JobsPanel,
+  LlmNotice,
+  SettingsDialog,
+  SnippetBox,
+} from "./Generate";
 import { Help } from "./Help";
 import { jobSummary, money, openEdits, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
@@ -39,6 +49,7 @@ export function App() {
   const [selection, setSelection] = useState<ReaderSelection | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [consentFor, setConsentFor] = useState<(() => void) | null>(null); // an AI action waiting for the notice
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<Toast | null>(null);
@@ -204,6 +215,21 @@ export function App() {
     if (await guard(api.discardJob(job.id))) await reloadJobs();
   }
 
+  /** Run an action that sends content to the model; the first time, after the third-party notice. */
+  function llm(action: () => void) {
+    if (settings?.llm_notice_accepted) action();
+    else setConsentFor(() => action);
+  }
+
+  async function acceptNotice() {
+    const action = consentFor;
+    setConsentFor(null);
+    const s = await guard(api.acceptLlmNotice());
+    if (!s) return;
+    setSettings(s);
+    action?.();
+  }
+
   async function transcribe(page: number, rect: number[] | null, image: string) {
     if (!doc) return say("Open a document first (O)");
     const r = await guard(api.transcribe(doc.id, { page, rect, image }));
@@ -244,7 +270,7 @@ export function App() {
     if (!file) return;
     e.preventDefault();
     const fr = new FileReader();
-    fr.onload = () => void transcribe(reader.current?.currentPage() ?? 1, null, String(fr.result));
+    fr.onload = () => llm(() => void transcribe(reader.current?.currentPage() ?? 1, null, String(fr.result)));
     fr.readAsDataURL(file);
   };
   useEffect(() => {
@@ -474,7 +500,7 @@ export function App() {
         }
         return;
       }
-      if (help || settingsOpen || docConfirm || exportOpen) return;
+      if (help || settingsOpen || docConfirm || exportOpen || consentFor) return;
       const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen || askingFor !== null);
       if (c) {
         e.preventDefault();
@@ -483,7 +509,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen, consentFor]);
 
   const pending = notes.filter((n) => n.status === "new" || n.status === "edited").length;
   return (
@@ -616,7 +642,7 @@ export function App() {
               focusOpen && selection ? (
                 <FocusBox
                   pageLabel={selection.sourceId ? `the figure on p.${selection.page}` : `p.${selection.page}`}
-                  onSubmit={(f) => void generateSelection(f)}
+                  onSubmit={(f) => llm(() => void generateSelection(f))}
                   onCancel={() => setFocusOpen(false)}
                 />
               ) : snippet ? (
@@ -632,7 +658,7 @@ export function App() {
             regionMode={regionMode}
             onRegion={(r: Region) => {
               setRegionMode(false);
-              void transcribe(r.page, r.rect, r.image);
+              llm(() => void transcribe(r.page, r.rect, r.image));
             }}
             onSelection={setSelection}
             onSourceClick={(sid) => {
@@ -668,11 +694,11 @@ export function App() {
           onDismissFlag={(id, flag) => void dismissFlag(id, flag)}
           edits={edits}
           askingFor={askingFor}
-          onAsk={(id, t) => void askEdit(id, t)}
+          onAsk={(id, t) => llm(() => void askEdit(id, t))}
           onCancelAsk={() => setAskingFor(null)}
           onAccept={(j) => void accept(j)}
           onDiscard={(j) => void discard(j)}
-          onRetryEdit={(j) => void guard(api.retryJob(j.id)).then(reloadJobs)}
+          onRetryEdit={(j) => llm(() => void guard(api.retryJob(j.id)).then(reloadJobs))}
           onCancelJob={(j) => void guard(api.cancelJob(j.id)).then(reloadJobs)}
         />
       </main>
@@ -683,6 +709,7 @@ export function App() {
           onChanged={() => void reloadJobs()}
           onShowSource={(sid) => reader.current?.showSource(sid)}
           leftOutLabel={(name) => settings?.profiles.find((x) => x.name === name)?.left_out_label ?? "out of scope"}
+          llm={llm}
           say={say}
         />
       )}
@@ -707,7 +734,7 @@ export function App() {
         />
       )}
       {docConfirm && (
-        <DocumentConfirm estimate={docConfirm} onSubmit={(f) => void generateDocument(f)} onCancel={() => setDocConfirm(null)} />
+        <DocumentConfirm estimate={docConfirm} onSubmit={(f) => llm(() => void generateDocument(f))} onCancel={() => setDocConfirm(null)} />
       )}
       {settingsOpen && settings && (
         <SettingsDialog
@@ -721,6 +748,7 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {consentFor && <LlmNotice onAccept={() => void acceptNotice()} onCancel={() => setConsentFor(null)} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       {help && <Help onClose={() => setHelp(false)} />}
     </div>

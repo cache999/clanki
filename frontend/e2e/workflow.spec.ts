@@ -159,6 +159,18 @@ test("generate cards with the LLM", async ({ page }) => {
   await expect(focus).toBeFocused();
   await focus.fill("function");
   await page.keyboard.press("Enter");
+
+  // the first time, a notice says what is sent to a third party; Cancel sends nothing
+  const notice = page.getByRole("dialog", { name: "Before using the AI features" });
+  await expect(notice).toContainText("DeepSeek");
+  await expect(notice).toContainText("right to share");
+  await notice.getByRole("button", { name: "Cancel" }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator(".clanki-hl .hl.has-cards")).toHaveCount(greenBefore);
+  await page.keyboard.press("g");
+  await page.locator(".focusbox input").fill("function");
+  await page.keyboard.press("Enter");
+  await notice.getByRole("button", { name: "I understand, continue" }).click();
   const gen = card(page, "Generated: Cones mediate colour vision in bright");
   await expect(gen).toContainText("focus was function");
   await expect(gen.locator(".ai")).toHaveText("AI");

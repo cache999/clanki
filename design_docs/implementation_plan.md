@@ -237,6 +237,8 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
      - `ml_papers`: names the method on every card, uses MathJax, reconstructs equations garbled by PDF text extraction (and flags any it is unsure of), and states results with dataset and metric. A live run on "Attention Is All You Need" reproduced the attention formula from the garbled text for $0.004.
      - MathJax: list items have `}}` and `{{` spaced apart on export, so a formula can't end a cloze early. The HTML check ignores maths, and clanki's card list renders it with KaTeX.
      - Paper links: arXiv `/abs`, `/pdf` and `/html` links and any page with `citation_pdf_url` metadata (bioRxiv, journals) open the paper's PDF under its title.
+   - The `general` profile is for anyone: no student or background assumptions, and it follows the source's spelling.
+   - Third-party notice: before the first AI action (generate, whole document, AI edit, reading a figure or screenshot, card-this-anyway, retry), a one-time dialog says what is sent to DeepSeek. It warns against sending others' intellectual property and confidential or patient data. Accepting is stored with the data (`llm_notice_accepted_at`). The dialog, not a button, takes focus, so the Enter that triggered the action can't accept it.
 
 ## Import tests (milestone 0, done)
 

@@ -93,3 +93,11 @@ def test_libreoffice_is_reported_and_its_path_checked(client, monkeypatch, tmp_p
                                   {"data_dir": "relative/path"}, {"unknown": 1}])
 def test_bad_settings_are_refused(client, body):
     assert put(client, **body).status_code == 422
+
+
+def test_the_third_party_notice_is_accepted_once_and_remembered(paths, anki):
+    client, _ = make(paths, anki)
+    assert client.get("/api/settings").json()["llm_notice_accepted"] is False
+    assert client.post("/api/settings/llm-notice").json()["llm_notice_accepted"] is True
+    again, _ = make(paths, anki)
+    assert again.get("/api/settings").json()["llm_notice_accepted"] is True

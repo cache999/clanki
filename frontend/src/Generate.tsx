@@ -109,6 +109,7 @@ export function JobsPanel(p: {
   onChanged(): void;
   onShowSource(sourceId: string): void;
   leftOutLabel(profile: string): string; // what left-out content was left out of, per profile
+  llm(action: () => void): void; // runs an action that calls the model, after the one-time notice
   say(text: string, kind?: "info" | "error"): void;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -157,7 +158,7 @@ export function JobsPanel(p: {
               <button onClick={() => act(() => api.cancelJob(j.id))}>Cancel</button>
             )}
             {(j.status === "failed" || j.status === "cancelled" || j.status === "done") && (
-              <button onClick={() => act(() => api.retryJob(j.id))} title="Run this job again">
+              <button onClick={() => p.llm(() => void act(() => api.retryJob(j.id)))} title="Run this job again">
                 Retry
               </button>
             )}
@@ -177,7 +178,7 @@ export function JobsPanel(p: {
                 {j.left_out.map((x, i) => (
                   <li key={i}>
                     {x.text} <span className="muted">— {x.reason}</span>{" "}
-                    <button onClick={() => act(() => api.cardLeftOut(j.id, i))}>Card this</button>
+                    <button onClick={() => p.llm(() => void act(() => api.cardLeftOut(j.id, i)))}>Card this</button>
                   </li>
                 ))}
               </ul>
@@ -188,6 +189,50 @@ export function JobsPanel(p: {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Shown once, before the first use of an AI feature: what is sent, and to whom. The dialog itself
+ * takes focus, not a button: the Enter that submitted the action must not also accept the notice. */
+export function LlmNotice(p: { onAccept(): void; onCancel(): void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+  return (
+    <div className="overlay" onClick={p.onCancel}>
+      <div
+        ref={ref}
+        tabIndex={-1}
+        className="dialog notice"
+        role="dialog"
+        aria-label="Before using the AI features"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") p.onCancel();
+        }}
+      >
+        <h2>Before using the AI features</h2>
+        <p>
+          To write cards, read figures and suggest edits, clanki sends content to <b>DeepSeek</b>, a third-party AI
+          service based in China: the text of the document you are working on, the passage, figure or screenshot you
+          choose, and the card being edited.
+        </p>
+        <ul>
+          <li>
+            Only send material you have the right to share. Lecture slides, handouts, textbooks and papers are often the
+            intellectual property of their authors, publishers or institution, and your institution's or employer's rules
+            may forbid uploading them to outside services.
+          </li>
+          <li>Never send confidential, personal or patient-identifiable information.</li>
+          <li>DeepSeek handles what it receives under its own terms and privacy policy, not clanki's.</li>
+        </ul>
+        <p className="muted small">This notice is shown once. Reading, writing cards yourself and sending them to Anki never leave this computer.</p>
+        <div className="dialog-actions">
+          <button onClick={p.onAccept}>I understand, continue</button>
+          <button onClick={p.onCancel}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
