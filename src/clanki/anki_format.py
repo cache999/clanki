@@ -42,10 +42,18 @@ def _wrap(style: str, xs: list[str]) -> str:
     return "".join("<div>%s</div>" % x for x in xs)
 
 
+def cloze_safe(s: str) -> str:
+    r"""Inside a cloze, "}}" would end it early and "{{" open one, as MathJax often writes them
+    (\frac{1}{\sqrt{d}}): space them, as Anki's manual advises; MathJax reads them the same."""
+    while "}}" in s or "{{" in s:
+        s = s.replace("}}", "} }").replace("{{", "{ {")
+    return s
+
+
 def overlap_fields(title, items, remarks="", mnemonic="", sources="", style="div", full=True) -> list[str]:
     """Every Cloze (overlapping) field, filled as the add-on's generator does with
     settings 1,1,0: item k is clozed, item k-1 shown, the rest '...'."""
-    items = [esc(x) for x in items]
+    items = [esc(cloze_safe(x)) for x in items]
     original = "<br>".join(items) if style == "div" else _wrap("ul", items)
     texts = []
     for k in range(len(items)):

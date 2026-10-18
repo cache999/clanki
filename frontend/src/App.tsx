@@ -278,7 +278,7 @@ export function App() {
     setDocId(d.id);
   }
 
-  async function updateDoc(patch: Partial<Pick<Doc, "deck" | "tags" | "title">>) {
+  async function updateDoc(patch: Partial<Pick<Doc, "deck" | "tags" | "title" | "profile">>) {
     if (!doc) return;
     const d = await guard(api.updateDocument(doc.id, patch));
     if (d) setDocs((xs) => xs.map((x) => (x.id === d.id ? d : x)));
@@ -540,6 +540,18 @@ export function App() {
               placeholder="NHB::vision"
               onCommit={(t) => updateDoc({ tags: parseTags(t) })}
             />
+            {settings && (
+              <label className="docfield" title="How cards are written for this document">
+                Profile
+                <select value={doc.profile} onChange={(e) => void updateDoc({ profile: e.target.value })}>
+                  {settings.profiles.map((x) => (
+                    <option key={x.name} value={x.name}>
+                      {x.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button onClick={deleteDoc} title="Remove this document from clanki">
               Remove
             </button>
@@ -670,6 +682,7 @@ export function App() {
           onClose={() => setJobsOpen(false)}
           onChanged={() => void reloadJobs()}
           onShowSource={(sid) => reader.current?.showSource(sid)}
+          leftOutLabel={(name) => settings?.profiles.find((x) => x.name === name)?.left_out_label ?? "out of scope"}
           say={say}
         />
       )}

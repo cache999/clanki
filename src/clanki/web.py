@@ -27,28 +27,47 @@ _SKIP = {"script", "style", "noscript", "nav", "footer", "form", "button", "svg"
 _BLOCKS = set(_HEADINGS) | {"p", "ul", "ol", "table", "img", "figure", "div", "section", "article", "blockquote",
                             "pre", "dl", "figcaption", "header", "main", "aside"}
 _CITATION = re.compile(r"\[\d+(?:[–-]\d+)?\]")
+_ARXIV = re.compile(r"https?://(?:www\.)?arxiv\.org/(?:abs|pdf|html)/([^?#]+?)(?:\.pdf)?/?$")
 
 
 class WebError(Exception):
     pass
 
 
-def page_to_pdf(url: str, client: httpx.Client) -> tuple[str, bytes]:
-    """The page's title and a PDF of its article. A link to a PDF gives that PDF."""
-    if urlparse(url).scheme not in ("http", "https"):
-        raise WebError("Give a web address starting with http:// or https://")
+def _get(client: httpx.Client, url: str) -> httpx.Response:
     try:
-        r = client.get(url, headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=20)
+        return client.get(url, headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=30)
     except httpx.HTTPError as e:
         raise WebError("Could not reach %s (%s)" % (urlparse(url).netloc, e)) from e
+
+
+def _is_pdf(r: httpx.Response) -> bool:
+    return r.headers.get("content-type", "").split(";")[0].strip().lower() == "application/pdf" or r.content.startswith(b"%PDF")
+
+
+def page_to_pdf(url: str, client: httpx.Client) -> tuple[str, bytes]:
+    """The page's title and a PDF of its article. A link to a PDF gives that PDF, and a paper's page
+    (arXiv, bioRxiv, journals: citation_pdf_url metadata) gives the paper's PDF, titled."""
+    if urlparse(url).scheme not in ("http", "https"):
+        raise WebError("Give a web address starting with http:// or https://")
+    if m := _ARXIV.match(url):  # the abstract page has the title and the PDF's address
+        url = "https://arxiv.org/abs/" + m.group(1)
+    r = _get(client, url)
     if r.status_code != 200:
         raise WebError("The site answered %d: it may block apps like clanki or need a login, so %s"
                        % (r.status_code, BROWSER_HINT))
     ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
-    if ctype == "application/pdf" or r.content.startswith(b"%PDF"):
+    if _is_pdf(r):
         return Path(urlparse(str(r.url)).path).stem or "document", r.content
     if ctype not in ("text/html", "application/xhtml+xml"):
         raise WebError("%s is not a web page (%s)" % (url, ctype or "unknown type"))
+    if paper := _paper(r.text, str(r.url)):
+        title, pdf_url = paper
+        p = _get(client, pdf_url)
+        if p.status_code != 200 or not _is_pdf(p):
+            raise WebError("The paper's PDF could not be fetched (%s): download the PDF from the site and open "
+                           "it with O" % (p.status_code if p.status_code != 200 else "not a PDF"))
+        return title, p.content
     title = _title(r.text) or Readable(r.text).short_title()
     article = lhtml.fromstring(Readable(r.text, url=str(r.url)).summary(html_partial=True))
     blocks = list(_blocks(article, str(r.url)))
@@ -57,6 +76,16 @@ def page_to_pdf(url: str, client: httpx.Client) -> tuple[str, bytes]:
     if sum(len(b[-1]) for b in blocks if b[0] != "img") < MIN_ARTICLE_CHARS:
         raise WebError("No article text found on the page (it may need JavaScript or a login): " + BROWSER_HINT)
     return title, _render(title, str(r.url), blocks, client)
+
+
+def _paper(page: str, base: str) -> tuple[str, str] | None:
+    """(title, PDF address) from a paper page's citation metadata (Google Scholar's tags)."""
+    doc = lhtml.fromstring(page)
+    pdf = doc.xpath('//meta[@name="citation_pdf_url"]/@content')
+    if not pdf:
+        return None
+    title = doc.xpath('//meta[@name="citation_title"]/@content')
+    return (" ".join(title[0].split()) if title else _title(page) or "paper"), urljoin(base, pdf[0].strip())
 
 
 def _title(page: str) -> str:

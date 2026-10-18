@@ -39,6 +39,7 @@ export type Doc = {
   title: string;
   filename: string;
   kind: string;
+  profile: string; // the prompt profile its cards are written with
   deck: string;
   tags: string[];
 };
@@ -82,6 +83,7 @@ export type Job = {
   target: string;
   focus: string;
   model: string;
+  profile: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled" | "applied" | "discarded";
   error: string | null;
   attempts: number;
@@ -116,7 +118,7 @@ export type Settings = {
   facets: string[];
   /** For new documents; kept with the data. */
   defaults: { deck: string; tags: string[]; profile: string };
-  profiles: { name: string; label: string }[];
+  profiles: { name: string; label: string; left_out_label: string }[];
   /** This PC (config.toml); port and data_dir apply after a restart. */
   machine: {
     config_path: string | null;

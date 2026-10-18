@@ -392,3 +392,17 @@ test("settings: defaults for new documents, and this computer's settings", async
   await expect(page.locator(".textLayer span", { hasText: "Rhodopsin" }).first()).toBeVisible();
   await expect(page.locator(".docfield", { hasText: "Tags" }).locator("input")).toHaveValue("e2e-default year2");
 });
+
+test("each document has a profile, and MathJax on cards is rendered", async ({ page, request }) => {
+  const docs = await (await request.get("/api/documents")).json();
+  const docId = docs[docs.length - 1].id;
+  await request.post(`/api/documents/${docId}/notes`, {
+    data: { type: "qa", front: "Transformer attention (formula)", back: "\\(\\mathrm{softmax}(QK^\\top/\\sqrt{d_k})V\\)" },
+  });
+  await page.goto("/");
+  const profile = page.locator(".docfield", { hasText: "Profile" }).locator("select");
+  await profile.selectOption({ label: "Machine learning (papers)" });
+  await expect(card(page, "Transformer attention").locator(".back .katex")).toHaveCount(1);
+  await page.reload();
+  await expect(profile).toHaveValue("ml_papers");
+});

@@ -102,3 +102,37 @@ def test_open_a_web_page_as_a_document(client):
 def test_a_page_that_cannot_be_opened_is_a_422(client):
     r = client.post("/api/documents/url", json={"url": "https://anatomy.example/elsewhere"})
     assert r.status_code == 422 and "404" in r.json()["detail"]
+
+
+PAPER_PDF = make_pdf([["Attention Is All You Need"], ["The Transformer relies entirely on attention."]])
+ABS = b"""<html><head><title>[1706.03762] Attention Is All You Need</title>
+<meta name="citation_title" content="Attention Is All You Need">
+<meta name="citation_pdf_url" content="https://arxiv.org/pdf/1706.03762v7"></head>
+<body><h1>Attention Is All You Need</h1><blockquote>Abstract: The dominant sequence transduction models...</blockquote></body></html>"""
+ARXIV = {"https://arxiv.org/abs/1706.03762": (200, "text/html", ABS),
+         "https://arxiv.org/abs/1706.03762v7": (200, "text/html", ABS),
+         "https://arxiv.org/pdf/1706.03762v7": (200, "application/pdf", PAPER_PDF)}
+
+
+@pytest.mark.parametrize("url", ["https://arxiv.org/abs/1706.03762", "https://arxiv.org/pdf/1706.03762v7",
+                                 "https://arxiv.org/html/1706.03762v7"])
+def test_an_arxiv_link_opens_the_paper_pdf_with_its_title(url):
+    assert page_to_pdf(url, transport(ARXIV)) == ("Attention Is All You Need", PAPER_PDF)
+
+
+def test_any_paper_landing_page_with_a_citation_pdf_opens_the_pdf():
+    landing = b"""<html><head><meta name="citation_title" content="Protein structure from sequence">
+    <meta name="citation_pdf_url" content="/content/10.1101/2024.01.01.123456v1.full.pdf"></head><body>Abstract</body></html>"""
+    routes = {"https://www.biorxiv.org/content/10.1101/2024.01.01.123456v1": (200, "text/html", landing),
+              "https://www.biorxiv.org/content/10.1101/2024.01.01.123456v1.full.pdf": (200, "application/pdf", PAPER_PDF)}
+    assert page_to_pdf("https://www.biorxiv.org/content/10.1101/2024.01.01.123456v1", transport(routes)) == (
+        "Protein structure from sequence", PAPER_PDF)
+
+
+def test_a_paper_whose_pdf_is_refused_says_to_download_it():
+    landing = b"""<html><head><meta name="citation_title" content="Paywalled">
+    <meta name="citation_pdf_url" content="https://journal.example/paper.pdf"></head><body>Abstract</body></html>"""
+    routes = {"https://journal.example/paper": (200, "text/html", landing),
+              "https://journal.example/paper.pdf": (403, "text/html", b"denied")}
+    with pytest.raises(WebError, match="download the PDF"):
+        page_to_pdf("https://journal.example/paper", transport(routes))

@@ -4,9 +4,12 @@ Read lecture slides and handouts, highlight passages, and turn them into Anki ca
 own note types (`Basic (optional reversed card)` with a `Why` field, and `Cloze (overlapping)`).
 See `design_docs/implementation_plan.md` for the design and roadmap.
 
-Milestones 1, 2, 4 and 5 (now): reader, manual and LLM-generated cards (DeepSeek), AI edits of a
-card, send to Anki, warnings for cards already in Anki, a coverage strip, figures and screenshots
-read into text, web pages by address.
+All milestones are built (3, the prompt-quality loop, was skipped). clanki has:
+- a reader, manual and LLM-generated cards (DeepSeek), and AI edits of a card;
+- send to Anki, or export with filters, and warnings for cards already in Anki;
+- a coverage strip, figures and screenshots read into text, and web pages and papers by address;
+- undo history, a settings page, and three prompt profiles: medical, general knowledge, and ML
+  papers with MathJax.
 
 ## Set up a Windows PC
 
@@ -24,7 +27,10 @@ precedence (that is how WSL development works: see below).
 
 ## Settings
 
-Optional `config.toml` in `%APPDATA%\clanki` (documents and cards live there too):
+Settings (`,`) covers the API key, model, defaults for new documents, and this computer's settings:
+the Anki address, LibreOffice path, port and data folder. The last group is saved to
+`config.toml` in `%APPDATA%\clanki` (`~/.local/share/clanki` in WSL), which you can also edit by
+hand (documents and cards live in that folder too):
 
 ```toml
 data_dir = "D:/OneDrive/clanki"   # share between PCs (use one PC at a time)
@@ -58,7 +64,22 @@ Press `?` in the app for all shortcuts. The main loop:
   `split into two`, `make it a list`) and press Enter. The suggestion appears under the card as a
   diff; `Y` accepts it, `D` discards it. The card stays as it was until you accept.
 - `S` sends new and edited cards to Anki (edited cards are updated in place). Cards with errors
-  stay in clanki until fixed. `Shift+E` exports an import file.
+  stay in clanki until fixed.
+- `Shift+E` exports an import file. Choose new and edited or all cards, Q/A and/or lists, a tag,
+  and this document or all of them. Exported cards are marked `exported` so `S` skips them. Import
+  the file in Anki with File ▸ Import. To update an exported card after editing it, export it again:
+  the re-import updates it in Anki.
+- `Z` undoes any change to the cards (edits, deletes, generated batches, accepted AI edits) and
+  `Shift+Z` redoes it. `H` lists the changes; click one to undo back to it. The history survives
+  restarts.
+- Each document has a profile (top bar), which decides how cards are written:
+  - **Medical (UKMLA)**: the default.
+  - **General knowledge**: any subject.
+  - **Machine learning (papers)**: names the method on every card and writes equations in MathJax
+    (`\( … \)`), which Anki and clanki's card list render.
+
+  Opening an arXiv or bioRxiv link with `Shift+O` fetches the paper's PDF. A downloaded PDF works
+  too. Settings ▸ "For new documents" sets the default profile, deck and tags.
 - A card that repeats one already in Anki gets a ⚠ showing that card: the same subject asked about
   the same subquestion (`Sacubitril (MoA)` when Anki has `Sacubitril (MoA, use) [2]`), regardless
   of word order. So does a reverse card whose Back a reversed Anki card already has. clanki reads

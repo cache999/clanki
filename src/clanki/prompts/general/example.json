@@ -1,0 +1,16 @@
+{
+ "cards": [
+  {"type": "qa", "kind": "fact", "front": "Capital of Australia", "back": "Canberra",
+   "why": "Chosen in 1908 as a compromise between the rival cities of Sydney and Melbourne.",
+   "add_reverse": true, "reverse_prompt": "country with this capital?", "facets": [], "flags": []},
+  {"type": "qa", "kind": "linkage", "front": "Ohm's law (formula)", "back": "\\(V = IR\\)",
+   "why": "In an ohmic conductor the current is proportional to the voltage across it; the resistance is the constant of proportionality.",
+   "add_reverse": false, "reverse_prompt": "", "facets": ["formula"], "flags": []},
+  {"type": "list", "kind": "process", "title": "Phases of mitosis (in order)",
+   "items": ["Prophase", "Prometaphase", "Metaphase", "Anaphase", "Telophase"],
+   "order_principle": "time", "remarks": "", "mnemonic": "", "full": true, "flags": []}
+ ],
+ "left_out": [{"text": "The author's biography", "reason": "not about the subject"}],
+ "image_occlusion_candidates": ["p.2 diagram: the cell cycle"],
+ "flags": []
+}

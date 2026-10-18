@@ -11,6 +11,7 @@ from .models import Note
 LONG_LIST = 8
 _ALLOWED_TAGS = {"b", "i", "u", "sub", "sup", "br"}
 _TAG = re.compile(r"</?\s*([a-zA-Z][a-zA-Z0-9]*)")
+_MATH = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.S)  # MathJax: \( ... \) and \[ ... \], where "<" is maths
 
 
 class Issue(BaseModel):
@@ -48,7 +49,7 @@ def _check_one(n: Note) -> list[Issue]:
         if len([s for s in n.back.split(";") if s.strip()]) >= 4:
             out.append(_warn("back_is_list", "4 or more items in Back: consider a list card"))
         bad = {t.lower() for f in (n.front, n.back, n.why, n.reverse_prompt)
-               for t in _TAG.findall(f)} - _ALLOWED_TAGS
+               for t in _TAG.findall(_MATH.sub(" ", f))} - _ALLOWED_TAGS
         if bad:
             out.append(_warn("unsupported_html",
                              "Tags shown as text in Anki: " + ", ".join(sorted(bad))))
@@ -58,8 +59,8 @@ def _check_one(n: Note) -> list[Issue]:
         out.append(_err("list_size", "A list needs 2-%d items (has %d)" % (OLC_MAX, len(items))))
     elif len(items) > LONG_LIST:
         out.append(_warn("long_list", "%d items: split by principle?" % len(items)))
-    if any("::" in x or "{{" in x or "}}" in x for x in items):
-        out.append(_err("bad_item_chars", "List items cannot contain '::', '{{' or '}}'"))
+    if any("::" in x for x in items):  # braces are spaced apart on export (anki_format.cloze_safe)
+        out.append(_err("bad_item_chars", "List items cannot contain '::'"))
     if not n.title.strip():
         out.append(_warn("no_title", "List has no title (the title is the prompt)"))
     return out

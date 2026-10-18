@@ -1,0 +1,14 @@
+label = "Machine learning (papers)"
+scope_none = "card the paper's ideas worth retaining: problem, key idea, key equations, design choices and their reasons, main results, limitations"
+left_out_label = "paper scope"
+left_out_focus = "Card this content too, even if it is a minor detail of the paper."
+
+[facets]
+use_anki = false  # the Anki collection is mostly medical, so its facets would not fit
+base = ["definition", "key idea", "intuition", "formula", "objective", "loss", "architecture", "input", "output",
+        "complexity", "assumption", "motivation", "contribution", "result", "dataset", "metric", "baseline",
+        "ablation", "limitation", "hyperparameter", "training", "inference", "advantage", "disadvantage",
+        "difference", "why"]
+exclude = []
+size = 40
+min_count = 5

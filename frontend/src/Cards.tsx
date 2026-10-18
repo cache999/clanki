@@ -1,4 +1,6 @@
 // Cards pane: the document's cards in reading order, each viewable and editable inline.
+import renderMathInElement from "katex/contrib/auto-render";
+import "katex/dist/katex.min.css";
 import { useEffect, useRef, useState } from "react";
 import type { Job, Note, NoteDraft } from "./api";
 import { cardDiff } from "./jobs";
@@ -219,8 +221,19 @@ function Suggestion(p: { note: Note; job: Job } & Pick<Props, "onAccept" | "onDi
   );
 }
 
-function Html({ s, className }: { s: string; className?: string }) {
-  return <div className={className} dangerouslySetInnerHTML={{ __html: richHtml(s) }} />;
+const MATH = [
+  { left: "\\(", right: "\\)", display: false },
+  { left: "\\[", right: "\\]", display: true },
+];
+
+/** Card text as Anki shows it: the allowed inline HTML, and MathJax (\( \) and \[ \]) rendered with KaTeX. */
+function Html({ s, className, inline }: { s: string; className?: string; inline?: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (ref.current && /\\[([]/.test(s)) renderMathInElement(ref.current, { delimiters: MATH, throwOnError: false });
+  }, [s]);
+  const Tag = inline ? "span" : "div";
+  return <Tag ref={ref as never} className={className} dangerouslySetInnerHTML={{ __html: richHtml(s) }} />;
 }
 
 function View({ note: n }: { note: Note }) {
@@ -230,7 +243,9 @@ function View({ note: n }: { note: Note }) {
         <Html className="front" s={n.title || "(no title)"} />
         <ol className="items">
           {n.items.map((it, i) => (
-            <li key={i}>{it}</li>
+            <li key={i}>
+              <Html inline s={it} />
+            </li>
           ))}
         </ol>
         {n.why && <Html className="why" s={n.why} />}
@@ -242,7 +257,7 @@ function View({ note: n }: { note: Note }) {
       <Html className="front" s={n.front || "(no front)"} />
       <div className="back">
         <Html s={n.back || "(no back)"} />
-        {n.add_reverse && n.reverse_prompt && <span className="rprompt">(r: {n.reverse_prompt})</span>}
+        {n.add_reverse && n.reverse_prompt && <Html inline className="rprompt" s={`(r: ${n.reverse_prompt})`} />}
       </div>
       {n.why && <Html className="why" s={n.why} />}
       {n.tags.some((t) => t !== "ai-generated") && (

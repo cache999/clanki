@@ -65,3 +65,44 @@ def test_flash_transcribes_a_diagram(deepseek):
     assert r.finish_reason == "stop" and r.usage.cache_miss < 3000
     for s in ("Angiotensinogen", "Angiotensin II", "Aldosterone", "ACE inhibitor", "Renin", "→"):
         assert s in r.text
+
+
+def _show(r, out):
+    print("\nusage %s, cost $%.5f" % (r.usage, r.cost_usd))
+    for c in out.cards:
+        print(" -", c.type, "|", getattr(c, "front", None) or c.title, "|",
+              getattr(c, "back", None) or "; ".join(c.items), "| why:", c.why if c.type == "qa" else c.remarks)
+    print(" left out:", [x.text for x in out.left_out])
+
+
+def test_flash_ml_profile_on_a_real_paper(deepseek):
+    import httpx
+    import io
+    from pypdf import PdfReader
+    from clanki.web import page_to_pdf
+    _, pdf = page_to_pdf("https://arxiv.org/abs/1706.03762", httpx.Client())
+    pages = [p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages]
+    target_page = next(i for i, p in enumerate(pages) if "Scaled Dot-Product Attention" in p and "softmax" in p)
+    start = pages[target_page].index("3.2.1")
+    target = pages[target_page][start:start + 1400]
+    msgs = build_messages(load_profile("ml_papers"), title="Attention Is All You Need", pages=pages, target=target,
+                          target_pages=(target_page + 1, target_page + 1), focus="", mode="highlight")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    text = r.text.lower()
+    assert out.cards and "\\\\(" in r.text and "this paper" not in text and "the proposed" not in text
+
+
+def test_flash_general_profile(deepseek):
+    pages = ["Ohm's law states that the current through a conductor between two points is directly proportional to "
+             "the voltage across the two points. Introducing the constant of proportionality, the resistance, one "
+             "arrives at I = V/R. The law was named after the German physicist Georg Ohm, who in 1827 described "
+             "measurements of applied voltage and current through simple electrical circuits containing various "
+             "lengths of wire."]
+    msgs = build_messages(load_profile("general"), title="Ohm's law", pages=pages, target=pages[0],
+                          target_pages=(1, 1), focus="", mode="highlight")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    assert out.cards and "ukmla" not in r.text.lower()

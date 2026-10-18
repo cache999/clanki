@@ -19,6 +19,9 @@ class Profile:
     label: str
     system: str
     transcribe: str = ""  # system prompt for reading an image into text
+    scope_none: str = "card the testable content of the target"  # what to card with no focus
+    left_out_label: str = "out of scope"  # what the left-out content was left out of
+    left_out_focus: str = "Card this content too."  # the focus for "card this anyway"
 
 
 def _meta(name: str) -> dict:
@@ -26,20 +29,27 @@ def _meta(name: str) -> dict:
 
 
 def facet_vocabulary(name: str = DEFAULT_PROFILE, facet_counts: dict | None = None) -> list[str]:
-    """The profile's facets, extended by the ones the student uses most in Anki (facets.count_facets)."""
+    """The profile's facets, extended by the ones the student uses most in Anki (facets.count_facets)
+    if the profile says its subject is what the Anki collection mostly holds (use_anki)."""
     f = _meta(name).get("facets", {})
-    return vocabulary(facet_counts or {}, base=f.get("base", []), exclude=f.get("exclude", []),
+    counts = (facet_counts or {}) if f.get("use_anki", False) else {}
+    return vocabulary(counts, base=f.get("base", []), exclude=f.get("exclude", []),
                       size=f.get("size", 50), min_count=f.get("min_count", 5))
 
 
 def load_profile(name: str = DEFAULT_PROFILE, facet_counts: dict | None = None) -> Profile:
-    example = json.dumps(EXAMPLE_OUTPUT, ensure_ascii=False, indent=1)
+    """A profile: system.md (with {EXAMPLE} and {FACETS} filled in), transcribe.md, profile.toml,
+    and optionally example.json, the profile's own example reply."""
+    d, meta = PROMPTS / name, _meta(name)
+    own = d / "example.json"
+    example = json.loads(own.read_text(encoding="utf-8")) if own.exists() else EXAMPLE_OUTPUT
     facets = ", ".join(facet_vocabulary(name, facet_counts))
-    system = (PROMPTS / name / "system.md").read_text(encoding="utf-8")
-    system = system.replace("{EXAMPLE}", example).replace("{FACETS}", facets).strip()
-    transcribe = PROMPTS / name / "transcribe.md"
-    return Profile(name=name, label=_meta(name)["label"], system=system,
-                   transcribe=transcribe.read_text(encoding="utf-8").strip() if transcribe.exists() else "")
+    system = (d / "system.md").read_text(encoding="utf-8")
+    system = system.replace("{EXAMPLE}", json.dumps(example, ensure_ascii=False, indent=1)).replace("{FACETS}", facets).strip()
+    transcribe = d / "transcribe.md"
+    extra = {k: meta[k] for k in ("scope_none", "left_out_label", "left_out_focus") if k in meta}
+    return Profile(name=name, label=meta["label"], system=system,
+                   transcribe=transcribe.read_text(encoding="utf-8").strip() if transcribe.exists() else "", **extra)
 
 
 def list_profiles() -> list[Profile]:
@@ -68,8 +78,7 @@ def build_messages(profile: Profile, *, title: str, pages: list[str], target: st
             "figure": "The target was transcribed from a figure, diagram or image the student selected "
                       "(labels as \"label: what it points to\", links as \"A → B\"): card what it shows."
             }.get(mode, "The target is a passage the student highlighted.")
-    focus_line = ("Focus: " + focus.strip()) if focus.strip() else \
-        "Focus: none (card the testable, UKMLA-relevant content of the target)"
+    focus_line = ("Focus: " + focus.strip()) if focus.strip() else "Focus: none (%s)" % profile.scope_none
     user = "\n".join(_document(title, pages, target_pages) + [
         what,
         '<target pages="%s">' % _pages_attr(*target_pages),

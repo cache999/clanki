@@ -1,0 +1,24 @@
+{
+ "cards": [
+  {"type": "qa", "kind": "fact", "front": "Transformer (Vaswani et al. 2017) scaled dot-product attention (formula)",
+   "back": "\\(\\mathrm{softmax}\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\\right)V\\)",
+   "why": "Each query is compared with every key by a dot product; the softmax turns the scores into weights over the values. \\(Q, K, V\\): query, key and value matrices; \\(d_k\\): key dimension.",
+   "add_reverse": false, "reverse_prompt": "", "facets": ["formula"], "flags": []},
+  {"type": "qa", "kind": "linkage", "front": "Transformer attention: reason for dividing by \\(\\sqrt{d_k}\\)",
+   "back": "Large dot products push the softmax into regions with tiny gradients",
+   "why": "For components with unit variance, \\(q \\cdot k\\) has variance \\(d_k\\); dividing by \\(\\sqrt{d_k}\\) brings it back to 1 whatever the key dimension.",
+   "add_reverse": false, "reverse_prompt": "", "facets": ["why"], "flags": []},
+  {"type": "qa", "kind": "fact", "front": "LoRA (low-rank adaptation; what is trained)",
+   "back": "Low-rank \\(B A\\) added to the frozen weights: \\(W_0 + BA\\)",
+   "why": "\\(B \\in \\mathbb{R}^{d \\times r}\\), \\(A \\in \\mathbb{R}^{r \\times k}\\) with rank \\(r \\ll \\min(d, k)\\), so far fewer parameters are trained, and \\(BA\\) can be merged into \\(W_0\\) for inference at no extra cost.",
+   "add_reverse": true, "reverse_prompt": "fine-tuning method?", "facets": ["training"], "flags": []},
+  {"type": "list", "kind": "process", "title": "Transformer encoder layer: sublayers (in data-flow order)",
+   "items": ["Multi-head self-attention", "Residual add and layer normalisation", "Position-wise feed-forward network", "Residual add and layer normalisation"],
+   "order_principle": "data flow",
+   "remarks": "The original paper normalises after each residual addition (post-norm); many later models normalise before (pre-norm), which trains more stably.",
+   "mnemonic": "", "full": true, "flags": []}
+ ],
+ "left_out": [{"text": "Training hardware: 8 NVIDIA P100 GPUs", "reason": "incidental detail"}],
+ "image_occlusion_candidates": ["p.3 Figure 1: the Transformer architecture"],
+ "flags": []
+}

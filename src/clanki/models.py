@@ -60,6 +60,7 @@ class Document(BaseModel):
     title: str
     filename: str
     kind: Literal["pdf", "pptx", "docx", "web"]  # original format; every document is read as PDF
+    profile: str = "medical_ukmla"  # the prompt profile its cards are written with
     deck: str = ""
     tags: list[str] = Field(default_factory=list)
     created_at: str | None = None

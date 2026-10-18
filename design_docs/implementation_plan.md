@@ -72,7 +72,7 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | `.` / `,` | Jobs panel / Settings |
 | `J` `K` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
 | `E` / `Enter` | Edit; `Ctrl+Enter` saves, `Esc` cancels |
-| `X` / `Z` | Delete / undo |
+| `X` / `Z` / `Shift+Z` / `H` | Delete / undo / redo / undo history |
 | `R` | Toggle Add Reverse; turning it on opens the reverse-prompt box |
 | `[` `]`, `+` `-` `0` | Previous/next page, zoom, fit width |
 | `S` | Send new and edited cards to Anki |
@@ -135,7 +135,7 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 - Sets get an imposed, stated order.
 - Nothing from `[note for llms]` ever appears in a card.
 
-`general` is a subject-neutral version for later.
+`general` (any subject) and `ml_papers` (machine-learning papers, MathJax) were added in milestone 6; each document picks its profile.
 
 ## Facet vocabulary (the "cache" from your Sacubitril note)
 
@@ -222,7 +222,21 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - A transcription job (plain text, no JSON mode) uses `prompts/<profile>/transcribe.md`: all text exactly as written, labels as `label: what it points to`, links as `A → B` (inhibition `⊣`), tables as `a | b` rows. The page's own text goes along, to spell labels. A synthetic RAAS diagram came back fully right in 2.7 s for $0.00013, including the label on each arrow and the inhibitor's target.
    - The transcription opens in an editable box in the reader bar. `Ctrl+Enter` makes it the selection, so `G`/`N`/`L` work as for selected text. Generation uses mode `figure` (the prompt says the target was transcribed from a figure), and the cards attach to the figure's source. The box shows as a dashed outline; clicking an uncarded one reopens its text.
    - Web pages: httpx with a user agent that names clanki (Wikipedia refuses anonymous clients), then readability-lxml for the article (it kept TeachMeAnatomy's headings and figures, where trafilatura flattened them), then fpdf2 with a bundled DejaVu font (for symbols like Na⁺) for the PDF. Lists, tables as `a | b` rows, figures and captions are kept, and citation markers dropped. A link to a PDF opens that PDF. A refused or login-only page explains how to save it from the browser. LibreOffice isn't used, because its HTML import needs Writer.
-6. **Polish**: `general` profile, settings page, undo history, export filters.
+6. **Polish: done 2026-10-18**:
+   - **Undo history:** an `actions` table records each change to cards: add, edit, delete, reverse, flag dismissal, accepted AI edit, and a generation job's batch. Each record holds before and after snapshots of the cards it touched, per document.
+     - `Z` undoes the latest change and `Shift+Z` redoes it; `H` lists changes and can undo back to any of them. A new change clears redo.
+     - Restoring keeps a card's Anki link. A card in Anki whose content changes becomes `edited`, and undoing the creation of a sent card says it is still in Anki.
+   - **Export filters:** new and edited or all cards, card types, a tag (including tags under it and the document's tags), and one or all documents, with a live count. Cards with errors are left out.
+     - The `exported` status (with `exported_at`) means Send skips the card. An edited exported card is refused by Send (export it again; its guid makes the re-import update it).
+   - **Settings page:**
+     - Defaults for new documents (deck, tags, profile) are saved in the database.
+     - This PC's settings (Anki address, LibreOffice path, port, data folder) go to `config.toml`. The file is edited line by line, so comments survive. The Anki address and LibreOffice path apply at once; port and data folder after a restart.
+     - In WSL the system keyring is never used, because GNOME Keyring prompts or hangs there. The key comes from `DEEPSEEK_API_KEY`.
+   - **Profiles:** each document has a profile, and every job uses its document's profile. Each profile folder has `system.md`, `transcribe.md`, `profile.toml` (label, scope wording, facets, and `use_anki`: only the medical profile mines Anki facets) and optionally `example.json`.
+     - `general`: any subject.
+     - `ml_papers`: names the method on every card, uses MathJax, reconstructs equations garbled by PDF text extraction (and flags any it is unsure of), and states results with dataset and metric. A live run on "Attention Is All You Need" reproduced the attention formula from the garbled text for $0.004.
+     - MathJax: list items have `}}` and `{{` spaced apart on export, so a formula can't end a cloze early. The HTML check ignores maths, and clanki's card list renders it with KaTeX.
+     - Paper links: arXiv `/abs`, `/pdf` and `/html` links and any page with `citation_pdf_url` metadata (bioRxiv, journals) open the paper's PDF under its title.
 
 ## Import tests (milestone 0, done)
 

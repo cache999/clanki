@@ -108,6 +108,7 @@ export function JobsPanel(p: {
   onClose(): void;
   onChanged(): void;
   onShowSource(sourceId: string): void;
+  leftOutLabel(profile: string): string; // what left-out content was left out of, per profile
   say(text: string, kind?: "info" | "error"): void;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -169,7 +170,9 @@ export function JobsPanel(p: {
           ))}
           {j.left_out.length > 0 && (
             <details className="left-out">
-              <summary>{j.left_out.length} left out (UKMLA scope)</summary>
+              <summary>
+                {j.left_out.length} left out ({p.leftOutLabel(j.profile)})
+              </summary>
               <ul>
                 {j.left_out.map((x, i) => (
                   <li key={i}>

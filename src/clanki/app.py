@@ -37,7 +37,6 @@ from .validators import validate
 STATIC = Path(__file__).parent / "static"
 KINDS = {".pdf": "pdf", ".pptx": "pptx", ".ppt": "pptx", ".odp": "pptx",
          ".docx": "docx", ".doc": "docx", ".odt": "docx"}
-LEFT_OUT_FOCUS = "Card this content regardless of UKMLA relevance."
 PARALLEL_JOBS = 3
 INDEX_MAX_AGE_S = 600  # re-read the Anki collection on a status poll after this long
 
@@ -54,6 +53,7 @@ class DocumentPatch(BaseModel):
     title: str | None = None
     deck: str | None = None
     tags: list[str] | None = None
+    profile: str | None = None
 
 
 class SourceIn(BaseModel):
@@ -248,8 +248,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
 
     def new_document(**kw) -> Document:
         doc = store.add_document(**kw)
-        tags = store.get_setting("default_tags", [])
-        return store.update_document(doc.id, {"tags": list(tags)}) if tags else doc
+        return store.update_document(doc.id, {"tags": list(store.get_setting("default_tags", [])),
+                                              "profile": store.get_setting("default_profile", DEFAULT_PROFILE)})
 
     def for_anki(doc: Document, n: Note) -> Note:
         return n.model_copy(update={"tags": doc.tags + n.tags, "deck": n.deck or doc.deck})
@@ -301,6 +301,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     @app.patch("/api/documents/{doc_id}")
     def update_document(doc_id: str, patch: DocumentPatch) -> Document:
         get_doc(doc_id)
+        if patch.profile is not None and patch.profile not in {x.name for x in list_profiles()}:
+            raise HTTPException(422, "unknown profile %r" % patch.profile)
         return store.update_document(doc_id, patch.model_dump(exclude_unset=True))
 
     @app.delete("/api/documents/{doc_id}")
@@ -349,7 +351,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                                       text="", rects=[body.rect] if body.rect else []))
         (files / doc_id / "images").mkdir(parents=True, exist_ok=True)
         (files / doc_id / "images" / ("%s.%s" % (src.id, ext))).write_bytes(data)
-        j = runner.submit(Job(document_id=doc_id, source_id=src.id, mode="transcribe",
+        j = runner.submit(Job(document_id=doc_id, source_id=src.id, mode="transcribe", profile=get_doc(doc_id).profile,
                               pages=(body.page, body.page), target="", model=model))
         return {"job": store.get_job(j.id), "source": store.get_source(src.id)}
 
@@ -495,7 +497,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             else:
                 src = store.add_source(Source(document_id=doc.id, **sel.model_dump()))
             mode = "figure" if src.kind in ("region", "image") else "highlight"
-            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode=mode,
+            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode=mode, profile=doc.profile,
                                       pages=(src.page, src.page), target=sel.text, focus=body.focus,
                                       model=model))]
         else:
@@ -507,7 +509,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             jobs = []
             for a, b in chunks:
                 src = store.add_source(Source(document_id=doc.id, kind="chunk", page=a, page_end=b, text=""))
-                jobs.append(runner.submit(Job(document_id=doc.id, source_id=src.id, mode="chunk",
+                jobs.append(runner.submit(Job(document_id=doc.id, source_id=src.id, mode="chunk", profile=doc.profile,
                                               pages=(a, b), target=document_text(pages, a, b),
                                               focus=body.focus, model=model)))
         return {"jobs": [store.get_job(j.id) for j in jobs]}
@@ -573,7 +575,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         src = store.get_source(n.source_id) if n.source_id else None
         pages = (src.page, src.page_end or src.page) if src else (1, 1)
         j = runner.submit(Job(document_id=n.document_id, source_id=n.source_id, note_id=n.id, mode="edit",
-                              pages=pages, target=json.dumps(note_to_card(n), ensure_ascii=False),
+                              profile=get_doc(n.document_id).profile, pages=pages, target=json.dumps(note_to_card(n), ensure_ascii=False),
                               focus=instruction, model=model, before=n.model_dump()))
         return store.get_job(j.id)
 
@@ -625,17 +627,17 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         j = get_job(job_id)
         if not 0 <= index < len(j.left_out):
             raise HTTPException(404, "no such left-out item")
-        return resubmit(j, mode="highlight", target=j.left_out[index]["text"], focus=LEFT_OUT_FOCUS)
+        return resubmit(j, mode="highlight", target=j.left_out[index]["text"], focus=load_profile(j.profile).left_out_focus)
 
     # settings
     def settings():
         return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"],
                                            "key": keystore.key_status("deepseek")}},
                 "default_model": store.get_setting("default_model", DEFAULT_MODEL),
-                "facets": facet_vocabulary(facet_counts=facet_counts()),
+                "facets": facet_vocabulary(store.get_setting("default_profile", DEFAULT_PROFILE), facet_counts()),
                 "defaults": {"deck": default_deck(), "tags": store.get_setting("default_tags", []),
                              "profile": store.get_setting("default_profile", DEFAULT_PROFILE)},
-                "profiles": [{"name": x.name, "label": x.label} for x in list_profiles()],
+                "profiles": [{"name": x.name, "label": x.label, "left_out_label": x.left_out_label} for x in list_profiles()],
                 "machine": machine()}
 
     def machine() -> dict:

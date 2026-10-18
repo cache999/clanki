@@ -1,6 +1,10 @@
 label = "Medical (UKMLA)"
+scope_none = "card the testable, UKMLA-relevant content of the target"
+left_out_label = "UKMLA scope"
+left_out_focus = "Card this content regardless of UKMLA relevance."
 
 [facets]
+use_anki = true  # the Anki collection is mostly medical: its common facets join the list
 # The prompt's subquestion vocabulary: this list, then the facets used most in the student's
 # Anki fronts (read through AnkiConnect) up to `size`.
 base = ["definition", "function", "location", "MoA", "origin", "insertion", "innervation", "attachments",

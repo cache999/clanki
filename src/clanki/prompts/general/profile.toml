@@ -1,0 +1,13 @@
+label = "General knowledge"
+scope_none = "card the facts and ideas in the target worth remembering"
+left_out_label = "too minor"
+left_out_focus = "Card this content too, even if it seems minor."
+
+[facets]
+use_anki = false  # the Anki collection is mostly medical, so its facets would not fit
+base = ["definition", "example", "cause", "effect", "purpose", "function", "mechanism", "formula", "units", "value",
+        "date", "place", "person", "origin", "type", "property", "use", "advantage", "disadvantage", "difference",
+        "significance", "why"]
+exclude = []
+size = 40
+min_count = 5

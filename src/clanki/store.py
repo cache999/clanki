@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS notes_doc ON notes(document_id);
 CREATE INDEX IF NOT EXISTS jobs_doc ON jobs(document_id);
 """
 
-DOCUMENT_EDITABLE = {"title", "deck", "tags"}
+DOCUMENT_EDITABLE = {"title", "deck", "tags", "profile"}
 NOTE_BOOKKEEPING = {"id", "guid", "document_id", "status", "deleted", "anki_note_id",
                     "created_at", "updated_at", "sent_at", "exported_at"}
 NOTE_METADATA = {"flags", "kind", "facets", "source_id"}  # stay in clanki; never sent to Anki
