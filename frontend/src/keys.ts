@@ -6,6 +6,8 @@ export type Command =
   | "generate"
   | "generateDocument"
   | "figure"
+  | "readShots"
+  | "rereadShots"
   | "aiEdit"
   | "acceptSuggestion"
   | "discardSuggestion"
@@ -37,7 +39,9 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "newList", keys: ["l"], help: "New list card (one item per selected line)", group: "Cards" },
   { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty)", group: "Generate" },
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
-  { command: "figure", keys: ["i"], help: "Transcribe a figure: drag a box around it (or paste a screenshot with Ctrl+V), correct the text, then G / N / L", group: "Generate" },
+  { command: "figure", keys: ["i"], help: "Screenshot a figure: drag a box around it (or paste one with Ctrl+V); click to pick, Shift+click to add", group: "Generate" },
+  { command: "readShots", keys: ["t"], help: "Read the picked screenshots into text (one call each, joined), correct it, then G / N / L", group: "Generate" },
+  { command: "rereadShots", keys: ["Shift+t"], help: "Read the picked screenshots again, even if already read", group: "Generate" },
   { command: "aiEdit", keys: ["a"], help: "Ask the AI to change the selected card (say what to change)", group: "Generate" },
   { command: "acceptSuggestion", keys: ["y"], help: "Accept the AI's suggestion for the selected card", group: "Generate" },
   { command: "discardSuggestion", keys: ["d"], help: "Discard the AI's suggestion", group: "Generate" },

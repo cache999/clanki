@@ -1,4 +1,5 @@
 """In-memory stand-in for the AnkiConnect add-on, served through httpx.MockTransport."""
+import base64
 import json
 import re
 
@@ -12,6 +13,7 @@ class FakeAnki:
         self.models = models if models is not None else {BASIC: list(BASIC_FIELDS), OVERLAP: list(OVERLAP_FIELDS)}
         self.decks = {"Default"}
         self.notes = {}  # id -> {"modelName", "deckName", "fields", "tags"}
+        self.media = {}  # filename -> bytes
         self.next_id = 1000
         self.calls = []
 
@@ -89,6 +91,10 @@ class FakeAnki:
         for c in cards:
             out.setdefault(self.notes[c // 10]["deckName"], []).append(c)
         return out
+
+    def a_storeMediaFile(self, filename, data):
+        self.media[filename] = base64.b64decode(data)
+        return filename
 
     def a_updateNoteFields(self, note):
         if note["id"] not in self.notes:

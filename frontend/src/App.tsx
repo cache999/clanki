@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AnkiStatus, type Doc, type Estimate, type Job, type Note, type NoteDraft, type Settings, type Source } from "./api";
 import { Cards, type EditTarget } from "./Cards";
-import { sourceLabel } from "./figure";
+import { joinTranscripts, pickShot, sourceLabel } from "./figure";
 import {
   DocumentConfirm,
   ExportDialog,
@@ -17,6 +17,7 @@ import { Help } from "./Help";
 import { jobSummary, money, openEdits, sourceStates } from "./jobs";
 import { commandFor, isTyping, type Command } from "./keys";
 import { Reader, type ReaderHandle, type ReaderSelection, type Region } from "./Reader";
+import { ShotTray } from "./Shots";
 import { joinLines, orderNotes, splitItems } from "./selection";
 import { parseTags } from "./text";
 
@@ -62,10 +63,11 @@ export function App() {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [askingFor, setAskingFor] = useState<string | null>(null);
-  // figures: drawing a box, waiting for the model's transcription, then correcting it
+  // screenshots: drawing a box, picking some, waiting for their transcripts, then correcting the joined text
   const [regionMode, setRegionMode] = useState(false);
-  const [awaiting, setAwaiting] = useState<string | null>(null); // source id being transcribed
-  const [snippet, setSnippet] = useState<Source | null>(null);
+  const [shots, setShots] = useState<string[]>([]); // picked screenshot ids, in picking order
+  const [reading, setReading] = useState<{ ids: string[]; jobIds: string[] } | null>(null);
+  const [snippet, setSnippet] = useState<{ sources: Source[]; text: string } | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -77,6 +79,12 @@ export function App() {
   );
   const sourceStatus = useMemo(() => sourceStates(jobs), [jobs]);
   const edits = useMemo(() => openEdits(jobs), [jobs]);
+  const screenshots = useMemo(() => sources.filter((s) => s.kind === "region" || s.kind === "image").reverse(), [sources]);
+  const pickedSet = useMemo(() => new Set(shots), [shots]);
+  const readingIds = useMemo(
+    () => new Set(jobs.filter((j) => j.mode === "transcribe" && (j.status === "queued" || j.status === "running")).map((j) => j.source_id!)),
+    [jobs],
+  );
   const summary = jobSummary(jobs);
   const sourcesWithCards = useMemo(() => new Set(notes.map((n) => n.source_id).filter(Boolean) as string[]), [notes]);
   const selected = notes.find((n) => n.id === selectedId) ?? null;
@@ -131,7 +139,8 @@ export function App() {
     setJobs([]);
     setFocusOpen(false);
     setRegionMode(false);
-    setAwaiting(null);
+    setShots([]);
+    setReading(null);
     setSnippet(null);
     if (docId) {
       remember(docId);
@@ -173,7 +182,7 @@ export function App() {
       api.generate(doc.id, {
         mode: "selection",
         selection: { page: selection.page, text: selection.text, rects: selection.rects },
-        source_id: selection.sourceId,
+        source_ids: selection.sourceIds,
         focus,
       }),
     );
@@ -230,39 +239,73 @@ export function App() {
     action?.();
   }
 
-  async function transcribe(page: number, rect: number[] | null, image: string) {
+  /** Keep a screenshot (nothing is sent yet) and pick it alone. */
+  async function saveShot(page: number, rect: number[] | null, image: string) {
     if (!doc) return say("Open a document first (O)");
-    const r = await guard(api.transcribe(doc.id, { page, rect, image }));
-    if (!r) return;
-    setAwaiting(r.source.id);
+    const s = await guard(api.addScreenshot(doc.id, { page, rect, image }));
+    if (!s) return;
+    setShots([s.id]);
     setSelection(null);
-    say("Reading the image…");
     await refresh(doc.id);
-    await reloadJobs();
+    say("Screenshot saved · T reads it · Shift+click others to add them");
   }
 
-  // when the transcription arrives, open it for correcting
+  function readShots(force: boolean) {
+    if (!doc) return say("Open a document first (O)");
+    if (!shots.length) return say("Pick a screenshot first: I takes one, a click picks one");
+    const ids = shots;
+    llm(() => void startReading(ids, force));
+  }
+
+  async function startReading(ids: string[], force: boolean) {
+    if (!doc) return;
+    const r = await guard(api.transcribe(doc.id, ids, force));
+    if (!r) return;
+    if (r.jobs.length) say(`Reading ${r.jobs.length} image${r.jobs.length === 1 ? "" : "s"}…`);
+    await reloadJobs();
+    setReading({ ids, jobIds: r.jobs.map((j) => j.id) });
+  }
+
+  // when every picked screenshot has been read, open the joined transcript for correcting
   useEffect(() => {
-    if (!awaiting) return;
-    const j = jobs.find((x) => x.source_id === awaiting && x.mode === "transcribe");
-    const s = sources.find((x) => x.id === awaiting);
-    if (j && ["failed", "cancelled"].includes(j.status)) setAwaiting(null);
-    else if (j?.status === "done" && s?.text) {
-      setAwaiting(null);
-      setSnippet(s);
-    }
-  }, [awaiting, jobs, sources]);
+    if (!reading || !doc) return;
+    const mine = jobs.filter((j) => reading.jobIds.includes(j.id));
+    if (mine.some((j) => j.status === "failed" || j.status === "cancelled")) return setReading(null);
+    if (mine.length < reading.jobIds.length || mine.some((j) => j.status !== "done")) return;
+    const want = reading.ids;
+    setReading(null);
+    void guard(api.sources(doc.id)).then((all) => {
+      if (!all) return;
+      setSources(all);
+      const picked = want.map((id) => all.find((s) => s.id === id)).filter((s): s is Source => !!s?.text);
+      if (picked.length) setSnippet({ sources: picked, text: joinTranscripts(picked) });
+    });
+  }, [reading, jobs, doc]);
 
   async function cardSnippet(text: string) {
-    const s = snippet;
-    if (!s) return;
+    const sn = snippet;
+    if (!sn) return;
     setSnippet(null);
-    if (text !== s.text && !(await guard(api.correctSource(s.id, text)))) return;
+    const [first] = sn.sources;
+    if (sn.sources.length === 1 && text !== first.text && !(await guard(api.correctSource(first.id, text)))) return;
     if (doc) await refresh(doc.id);
-    setSelection({ page: s.page, text, rects: s.rects, sourceId: s.id });
+    setSelection({ page: first.page, text, rects: first.rects, sourceIds: sn.sources.map((x) => x.id) });
   }
 
-  // a pasted screenshot is read like a figure on the page being read
+  async function deleteShot(id: string) {
+    if (!doc || !(await guard(api.deleteSource(id)))) return;
+    setShots((cur) => cur.filter((x) => x !== id));
+    await refresh(doc.id);
+  }
+
+  async function dropImage(noteId: string, field: string, sourceId: string) {
+    if (!doc || !(await guard(api.addImage(noteId, sourceId, field)))) return;
+    await refresh(doc.id);
+    setSelectedId(noteId);
+    say("Image added · Z undoes");
+  }
+
+  // a pasted screenshot is kept like a box dragged on the page being read
   const pasteRef = useRef<(e: ClipboardEvent) => void>(() => {});
   pasteRef.current = (e: ClipboardEvent) => {
     if (isTyping(e.target)) return;
@@ -270,7 +313,7 @@ export function App() {
     if (!file) return;
     e.preventDefault();
     const fr = new FileReader();
-    fr.onload = () => llm(() => void transcribe(reader.current?.currentPage() ?? 1, null, String(fr.result)));
+    fr.onload = () => void saveShot(reader.current?.currentPage() ?? 1, null, String(fr.result));
     fr.readAsDataURL(file);
   };
   useEffect(() => {
@@ -331,8 +374,8 @@ export function App() {
   async function create(fields: NoteDraft & { sel?: ReaderSelection }) {
     if (!doc) return;
     const { sel, ...note } = fields;
-    let source_id: string | null = sel?.sourceId ?? null;
-    if (sel && !sel.sourceId) {
+    let source_id: string | null = sel?.sourceIds?.[0] ?? null;
+    if (sel && !sel.sourceIds) {
       const s = await guard(api.addSource(doc.id, { page: sel.page, text: sel.text, rects: sel.rects }));
       if (!s) return;
       source_id = s.id;
@@ -427,6 +470,10 @@ export function App() {
         return setFocusOpen(true);
       case "generateDocument":
         return doc ? void confirmDocument() : say("Open a document first (O)");
+      case "readShots":
+        return readShots(false);
+      case "rereadShots":
+        return readShots(true);
       case "figure":
         if (!doc) return say("Open a document first (O)");
         setSelection(null);
@@ -497,7 +544,7 @@ export function App() {
         else if (selection) {
           setSelection(null);
           reader.current?.clearSelection();
-        }
+        } else if (shots.length) setShots([]);
         return;
       }
       if (help || settingsOpen || docConfirm || exportOpen || consentFor) return;
@@ -509,7 +556,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen, consentFor]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen, consentFor, shots]);
 
   const pending = notes.filter((n) => n.status === "new" || n.status === "edited").length;
   return (
@@ -641,14 +688,24 @@ export function App() {
             bar={
               focusOpen && selection ? (
                 <FocusBox
-                  pageLabel={selection.sourceId ? `the figure on p.${selection.page}` : `p.${selection.page}`}
+                  pageLabel={
+                    !selection.sourceIds
+                      ? `p.${selection.page}`
+                      : selection.sourceIds.length > 1
+                        ? `${selection.sourceIds.length} screenshots`
+                        : `the figure on p.${selection.page}`
+                  }
                   onSubmit={(f) => llm(() => void generateSelection(f))}
                   onCancel={() => setFocusOpen(false)}
                 />
               ) : snippet ? (
                 <SnippetBox
-                  key={snippet.id}
-                  label={`Read from the ${snippet.kind === "region" ? "figure" : "image"} on p.${snippet.page}`}
+                  key={snippet.sources.map((x) => x.id).join()}
+                  label={
+                    snippet.sources.length > 1
+                      ? `Read from ${snippet.sources.length} screenshots`
+                      : `Read from the ${snippet.sources[0].kind === "region" ? "figure" : "image"} on p.${snippet.sources[0].page}`
+                  }
                   text={snippet.text}
                   onUse={(t) => void cardSnippet(t)}
                   onCancel={() => setSnippet(null)}
@@ -658,14 +715,24 @@ export function App() {
             regionMode={regionMode}
             onRegion={(r: Region) => {
               setRegionMode(false);
-              llm(() => void transcribe(r.page, r.rect, r.image));
+              void saveShot(r.page, r.rect, r.image);
             }}
+            selectedShots={pickedSet}
+            tray={
+              <ShotTray
+                shots={screenshots}
+                picked={shots}
+                reading={readingIds}
+                onPick={(id, shift) => setShots((cur) => pickShot(cur, id, shift))}
+                onDelete={(id) => void deleteShot(id)}
+              />
+            }
             onSelection={setSelection}
-            onSourceClick={(sid) => {
-              const n = ordered.find((x) => x.source_id === sid);
+            onSourceClick={(sid, shift) => {
               const s = sources.find((x) => x.id === sid);
+              if (s && (s.kind === "region" || s.kind === "image")) setShots((cur) => pickShot(cur, sid, shift));
+              const n = !shift && ordered.find((x) => x.source_id === sid);
               if (n) setSelectedId(n.id);
-              else if (s && s.kind === "region" && s.text) setSnippet(s); // reopen a figure not yet carded
             }}
           />
         ) : (
@@ -700,6 +767,7 @@ export function App() {
           onDiscard={(j) => void discard(j)}
           onRetryEdit={(j) => llm(() => void guard(api.retryJob(j.id)).then(reloadJobs))}
           onCancelJob={(j) => void guard(api.cancelJob(j.id)).then(reloadJobs)}
+          onDropImage={(id, field, sid) => void dropImage(id, field, sid)}
         />
       </main>
       {jobsOpen && (

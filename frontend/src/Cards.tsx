@@ -3,6 +3,7 @@ import renderMathInElement from "katex/contrib/auto-render";
 import "katex/dist/katex.min.css";
 import { useEffect, useRef, useState } from "react";
 import type { Job, Note, NoteDraft } from "./api";
+import { imageFields, SHOT_TYPE } from "./figure";
 import { cardDiff } from "./jobs";
 import { parseTags, richHtml } from "./text";
 
@@ -30,10 +31,17 @@ type Props = {
   onDiscard(job: Job): void;
   onRetryEdit(job: Job): void;
   onCancelJob(job: Job): void;
+  onDropImage(noteId: string, field: string, sourceId: string): void; // a screenshot dropped on a field
 };
 
 export function Cards(p: Props) {
   const selectedRef = useRef<HTMLDivElement>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null); // card a screenshot is being dragged over
+  useEffect(() => {
+    const end = () => setDropOn(null);
+    window.addEventListener("dragend", end);
+    return () => window.removeEventListener("dragend", end);
+  }, []);
   useEffect(() => {
     // braces matter: newer Chromium returns a Promise here, which React would call as cleanup
     selectedRef.current?.scrollIntoView({ block: "nearest" });
@@ -75,7 +83,40 @@ export function Cards(p: Props) {
             className={`card ${selected ? "selected" : ""} st-${n.status}`}
             onClick={() => p.onSelect(n.id)}
             onDoubleClick={() => p.onEdit({ id: n.id })}
+            onDragEnter={(e) => {
+              if (!e.dataTransfer.types.includes(SHOT_TYPE) || editing) return;
+              e.preventDefault();
+              setDropOn(n.id);
+            }}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes(SHOT_TYPE) || editing) return;
+              e.preventDefault();
+              setDropOn(n.id);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOn((d) => (d === n.id ? null : d));
+            }}
           >
+            {dropOn === n.id && (
+              <div className="dropzones">
+                {imageFields(n.type).map(([field, label]) => (
+                  <div
+                    key={field}
+                    className="dropzone"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDropOn(null);
+                      const id = e.dataTransfer.getData(SHOT_TYPE);
+                      if (id) p.onDropImage(n.id, field, id);
+                    }}
+                  >
+                    {label}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="card-meta">
               <span className="kind">{n.type === "qa" ? (n.add_reverse ? "Q/A ⇄" : "Q/A") : `List · ${n.items.length}`}</span>
               <span className={`status st-${n.status}`}>{n.status}</span>

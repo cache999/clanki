@@ -105,7 +105,7 @@ def test_document_tags_count_for_the_tag_filter(client, doc):
 def test_cards_with_errors_are_left_out_and_counted(client, doc):
     add(client, doc, front="Good")
     add(client, doc, front="", back="x")
-    assert preview(client, [doc]) == {"cards": 1, "with_errors": 1}
+    assert preview(client, [doc]) == {"cards": 1, "with_errors": 1, "with_images": 0}
     assert fronts(export(client, [doc])) == ["Good"]
     assert notes(client, doc)[""]["status"] == "new"
 

@@ -86,7 +86,7 @@ kbd {
 
 .main { display: grid; grid-template-columns: 1fr minmax(380px, 36%); min-height: 0; flex: 1; }
 
-.reader { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+.reader { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; min-width: 0; }
 .reader.welcome { display: flex; align-items: center; justify-content: center; background: var(--reader-bg); }
 .reader-bar {
   display: flex; gap: 12px; align-items: center; padding: 3px 8px;
@@ -114,6 +114,7 @@ kbd {
 .clanki-hl .hl.region.has-cards { outline-color: var(--ok); }
 .clanki-hl .hl.region.active { outline: 2px solid var(--accent); }
 .clanki-hl .hl.region.failed { outline-color: var(--bad); }
+.clanki-hl .hl.region.picked { background: rgba(36, 89, 201, 0.16); outline: 2px solid var(--accent); }
 .pdf-container.region-mode, .pdf-container.region-mode .textLayer span { cursor: crosshair; }
 .region-draft { position: absolute; z-index: 3; outline: 2px dashed var(--accent); background: rgba(36, 89, 201, 0.08); pointer-events: none; }
 .snippet { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
@@ -241,3 +242,19 @@ kbd {
 .history li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
 .history li:hover { background: var(--sel); }
 .history li.undone span:first-child { color: var(--muted); text-decoration: line-through; }
+
+/* screenshot tray */
+.tray { display: flex; gap: 6px; align-items: center; padding: 4px 8px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--panel); }
+.shot { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; padding: 2px; border: 2px dashed var(--border); border-radius: 5px; cursor: pointer; background: var(--bg); }
+.shot img { height: 44px; max-width: 120px; object-fit: contain; }
+.shot.picked { border: 2px solid var(--accent); background: var(--sel); }
+.shot-label { font-size: 11px; color: var(--muted); }
+.shot-delete { position: absolute; top: -6px; right: -6px; display: none; width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 12px; line-height: 1; }
+.shot:hover .shot-delete { display: block; }
+.tray-hint { font-size: 11px; white-space: nowrap; margin-left: 4px; }
+/* images on cards, and dropping screenshots onto their fields */
+.card-img { display: block; max-width: 100%; max-height: 180px; margin-top: 4px; border-radius: 3px; }
+.dropzones { display: flex; gap: 4px; margin-bottom: 4px; }
+.dropzone { flex: 1; padding: 8px 4px; text-align: center; border: 2px dashed var(--accent); border-radius: 5px; color: var(--accent); font-size: 13px; }
+.dropzone:hover { background: var(--sel); }
+.dialog .warn { color: var(--warn); }

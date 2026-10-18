@@ -22,3 +22,11 @@ describe("parseTags", () => {
     expect(parseTags(" NHB::vision, kind::fact  NHB::vision ")).toEqual(["NHB::vision", "kind::fact"]);
   });
 });
+
+describe("card images", () => {
+  it("shows clanki's screenshots and escapes any other image", () => {
+    const name = "clanki-0123456789abcdef0123456789abcdef.png";
+    expect(richHtml(`~498 nm\n<img src="${name}">`)).toBe(`~498 nm<br><img class="card-img" src="/api/media/${name}">`);
+    expect(richHtml('<img src="http://x.example/a.png">')).toBe("&lt;img src=&quot;http://x.example/a.png&quot;&gt;");
+  });
+});

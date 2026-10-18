@@ -280,10 +280,11 @@ test("coverage strip, and warnings for cards already in Anki", async ({ page, re
   await expect(segs.nth(1)).toHaveAttribute("title", /p\.2: \d+ cards/);
 });
 
-test("transcribe a figure by dragging a box, or by pasting a screenshot", async ({ page }) => {
+test("screenshots: capture, pick one or several, read them, and drop one onto a card", async ({ page }) => {
   await page.goto("/");
-  // I, then drag a box on the page
   await page.locator(".textLayer span").first().waitFor();
+
+  // I, then drag a box: the screenshot is kept and picked, and nothing is sent yet
   await page.keyboard.press("i");
   await expect(page.locator(".reader-bar")).toContainText("Drag a box");
   const box = (await page.locator(".page").first().boundingBox())!;
@@ -291,15 +292,18 @@ test("transcribe a figure by dragging a box, or by pasting a screenshot", async 
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.8, { steps: 6 });
   await page.mouse.up();
+  const shots = page.locator(".tray .shot");
+  await expect(shots).toHaveCount(1);
+  await expect(shots.first()).toHaveClass(/picked/);
+  await expect(page.locator(".clanki-hl .hl.region.picked")).toHaveCount(1);
+  await expect(page.locator(".snippet")).toHaveCount(0);
 
-  // the model's transcription opens for correction; the box stays marked on the page
+  // T reads the picked screenshot; the transcript opens for correcting
+  await page.keyboard.press("t");
   const snippet = page.locator(".snippet textarea");
   await expect(snippet).toHaveValue(/Median nerve: carpal tunnel/);
   await expect(snippet).toBeFocused();
-  await expect(page.locator(".clanki-hl .hl.region")).toHaveCount(1);
   await snippet.fill("Median nerve: carpal tunnel\nUlnar nerve: Guyon's canal");
-
-  // Ctrl+Enter makes it the selection; G generates cards from it, attached to the figure
   await page.keyboard.press("Control+Enter");
   await expect(page.locator(".sel-info")).toContainText("figure on p.1");
   await page.keyboard.press("g");
@@ -307,16 +311,35 @@ test("transcribe a figure by dragging a box, or by pasting a screenshot", async 
   const made = card(page, "Generated: Median nerve: carpal tunnel");
   await expect(made).toContainText("p.1 figure");
 
-  // a pasted screenshot is read the same way
+  // a pasted screenshot joins the tray, picked on its own
   const png = readFileSync(new URL("../../tests/fixtures/raas.png", import.meta.url)).toString("base64");
   await page.evaluate((b64) => {
     const dt = new DataTransfer();
     dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "shot.png", { type: "image/png" }));
     document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
   }, png);
-  await expect(snippet).toHaveValue(/Ulnar nerve/);
+  await expect(shots).toHaveCount(2);
+  await expect(page.locator(".tray .shot.picked")).toHaveCount(1);
+
+  // Shift+click the box on the page picks both; T joins their transcripts, labelled
+  await page.locator(".clanki-hl .hl.region").first().scrollIntoViewIfNeeded();
+  const region = (await page.locator(".clanki-hl .hl.region").first().boundingBox())!;
+  await page.keyboard.down("Shift");
+  await page.mouse.click(region.x + 20, region.y + 20);
+  await page.keyboard.up("Shift");
+  await expect(page.locator(".tray .shot.picked")).toHaveCount(2);
+  await page.keyboard.press("t");
+  await expect(snippet).toHaveValue(/\[Image 1, p\.1\][\s\S]*\[Image 2, p\.1\][\s\S]*Guyon's canal/);
   await page.keyboard.press("Escape");
   await expect(page.locator(".snippet")).toHaveCount(0);
+
+  // drag a screenshot onto a card: its fields appear as drop targets
+  await shots.first().hover();
+  await page.mouse.down();
+  await made.hover();
+  await made.locator(".dropzone", { hasText: "Back" }).hover();
+  await page.mouse.up();
+  await expect(made.locator(".back img.card-img")).toHaveCount(1);
 });
 
 test("open a web page by its address", async ({ page }) => {

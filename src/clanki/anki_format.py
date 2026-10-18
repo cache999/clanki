@@ -15,6 +15,8 @@ N_FIELDS = len(OVERLAP_FIELDS)  # widest note type; every export row is padded t
 REVERSE_FORMAT = "<br>(r: {prompt})"
 
 _INLINE = re.compile(r"&lt;(/?(?:b|i|u|sub|sup)|br\s*/?)&gt;", re.I)
+# a screenshot clanki copies into Anki's media (see media.py); no other image survives
+_IMAGE = re.compile(r"&lt;img src=&quot;(clanki-[0-9a-f]{32}\.(?:png|jpg|gif|webp))&quot;&gt;")
 
 
 def esc(s: str) -> str:
@@ -24,8 +26,9 @@ def esc(s: str) -> str:
 
 
 def rich(s: str) -> str:
-    """Like esc, but keeps the inline tags b, i, u, sub, sup and br."""
-    return _INLINE.sub(lambda m: "<" + m.group(1) + ">", esc(s))
+    """Like esc, but keeps the inline tags b, i, u, sub, sup and br, and clanki's screenshots."""
+    s = _INLINE.sub(lambda m: "<" + m.group(1) + ">", esc(s))
+    return _IMAGE.sub(lambda m: '<img src="%s">' % m.group(1), s)
 
 
 def assemble_back(back: str, add_reverse: bool, reverse_prompt: str, fmt: str = REVERSE_FORMAT) -> str:
@@ -65,7 +68,7 @@ def overlap_fields(title, items, remarks="", mnemonic="", sources="", style="div
     texts += [""] * (OLC_MAX - len(texts))
     whole = _wrap(style, ["{{c%d::%s}}" % (OLC_MAX + 1, x) for x in items]) if full else ""
     settings = "1,1,0 | n,n,n," + ("n" if full else "y")
-    return [esc(title), original, rich(mnemonic), rich(remarks), esc(sources), settings] + texts + [whole]
+    return [esc(title), original, rich(mnemonic), rich(remarks), rich(sources), settings] + texts + [whole]
 
 
 def note_fields(n: Note) -> tuple[str, dict[str, str]]:

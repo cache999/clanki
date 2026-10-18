@@ -13,8 +13,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 // The viewer module reads globalThis.pdfjsLib, which the pdfjs-dist import above sets.
 const viewerLib = import("pdfjs-dist/web/pdf_viewer.mjs");
 
-/** sourceId: the selection is a transcribed figure (that source), not text selected on the page. */
-export type ReaderSelection = { page: number; text: string; rects: number[][]; sourceId?: string };
+/** sourceIds: the selection is the transcript of these screenshots, not text selected on the page. */
+export type ReaderSelection = { page: number; text: string; rects: number[][]; sourceIds?: string[] };
 export type Region = { page: number; rect: number[]; image: string };
 
 /** The page's padding box in client coordinates. pdf.js pages have a border, and the
@@ -50,7 +50,11 @@ type Props = {
   regionMode: boolean;
   onRegion(r: Region): void;
   onSelection(sel: ReaderSelection | null): void;
-  onSourceClick(sourceId: string): void;
+  onSourceClick(sourceId: string, shift: boolean): void;
+  /** Screenshots picked for reading (drawn filled in). */
+  selectedShots: Set<string>;
+  /** Between the reader bar and the pages (the screenshot tray). */
+  tray?: React.ReactNode;
 };
 
 export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref) {
@@ -78,6 +82,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
           "hl" +
           (state ? " " + state : sourcesWithCards.has(s.id) ? " has-cards" : "") +
           (s.kind === "region" ? " region" : "") +
+          (propsRef.current.selectedShots.has(s.id) ? " picked" : "") +
           (s.id === activeSourceId ? " active" : "");
         Object.assign(r.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
         layer.appendChild(r);
@@ -134,7 +139,19 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     };
   }, [props.url]);
 
-  useEffect(redrawAll, [props.sources, props.activeSourceId, props.sourcesWithCards, props.sourceStatus]);
+  useEffect(redrawAll, [props.sources, props.activeSourceId, props.sourcesWithCards, props.sourceStatus, props.selectedShots]);
+
+  /** The source under the pointer, a screenshot before a text highlight. */
+  function sourceAt(e: React.MouseEvent) {
+    const pageDiv = (e.target as HTMLElement).closest(".page") as HTMLElement | null;
+    if (!pageDiv) return undefined;
+    const pageNumber = Number(pageDiv.dataset.pageNumber);
+    const box = pageBox(pageDiv);
+    const x = (e.clientX - box.left) / box.width;
+    const y = (e.clientY - box.top) / box.height;
+    const hits = props.sources.filter((s) => s.page === pageNumber && hitTest(s.rects, x, y));
+    return hits.find((s) => s.kind === "region") ?? hits[0];
+  }
 
   /** The box rendered at about the resolution the model reads, as a PNG data URL. */
   async function capture(pageNumber: number, rect: number[]): Promise<string> {
@@ -151,6 +168,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
   }
 
   function onMouseDown(e: React.MouseEvent) {
+    if (!props.regionMode && e.shiftKey && sourceAt(e)?.kind === "region") e.preventDefault(); // Shift+click picks, not selects
     if (!props.regionMode || e.button !== 0) return;
     const pageDiv = (e.target as HTMLElement).closest(".page") as HTMLElement | null;
     if (!pageDiv) return;
@@ -181,15 +199,9 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
     if (props.regionMode) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) {
-      // A plain click: select the cards of a highlight under the pointer.
-      const pageDiv = (e.target as HTMLElement).closest(".page") as HTMLElement | null;
-      if (!pageDiv) return;
-      const pageNumber = Number(pageDiv.dataset.pageNumber);
-      const box = pageBox(pageDiv);
-      const x = (e.clientX - box.left) / box.width;
-      const y = (e.clientY - box.top) / box.height;
-      const hit = props.sources.find((s) => s.page === pageNumber && hitTest(s.rects, x, y));
-      if (hit) props.onSourceClick(hit.id);
+      // A plain click: the highlight or screenshot under the pointer (Shift adds a screenshot to the picked ones).
+      const hit = sourceAt(e);
+      if (hit) props.onSourceClick(hit.id, e.shiftKey);
       return;
     }
     const range = sel.getRangeAt(0);
@@ -253,7 +265,8 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
           <span className="sel-info">Drag a box around a figure or its labels to transcribe it · Esc cancels</span>
         ) : sel ? (
           <span className="sel-info">
-            {sel.sourceId ? "Transcribed figure on" : "Selected on"} p.{sel.page}: “
+            {!sel.sourceIds ? "Selected on" : sel.sourceIds.length > 1 ? `Transcribed ${sel.sourceIds.length} screenshots, from` : "Transcribed figure on"}{" "}
+            p.{sel.page}: “
             {sel.text.length > 60 ? sel.text.slice(0, 60) + "…" : sel.text}” —{" "}
             <kbd>G</kbd> generate · <kbd>N</kbd> card · <kbd>L</kbd> list · <kbd>Esc</kbd> clear
           </span>
@@ -261,6 +274,7 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
           <span className="muted">Select text, then G to generate cards, or N / L to write one · Shift+G: whole document</span>
         )}
       </div>
+      <div className="tray-slot">{props.tray}</div>
       <div className="reader-body">
         {error && <div className="reader-error">Could not open the PDF: {error}</div>}
         <div

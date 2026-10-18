@@ -112,6 +112,10 @@ class Store:
             row = db.execute("SELECT data FROM sources WHERE id = ?", (source_id,)).fetchone()
         return Source.model_validate_json(row[0]) if row else None
 
+    def delete_source(self, source_id: str) -> None:
+        with self._db() as db:
+            db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
     def set_source_text(self, source_id: str, text: str) -> Source | None:
         s = self.get_source(source_id)
         if s is None:

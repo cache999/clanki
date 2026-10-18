@@ -250,7 +250,7 @@ export function ExportDialog(p: {
   const [tag, setTag] = useState("");
   const [all, setAll] = useState(false);
   const [mark, setMark] = useState(true);
-  const [count, setCount] = useState<{ cards: number; with_errors: number } | null>(null);
+  const [count, setCount] = useState<{ cards: number; with_errors: number; with_images: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const opts: ExportOptions = {
     document_ids: all ? p.allDocIds : [p.doc.id],
@@ -324,6 +324,12 @@ export function ExportDialog(p: {
           {count ? `${count.cards} card${count.cards === 1 ? "" : "s"}` : "…"}
           {count?.with_errors ? ` · ${count.with_errors} with errors left out (fix them first)` : ""}
         </p>
+        {!!count?.with_images && (
+          <p className="warn">
+            {count.with_images} card{count.with_images === 1 ? " has" : "s have"} images: an import file can't carry them, so
+            they won't show in Anki. Send to Anki (S) includes them.
+          </p>
+        )}
         {error && <p className="bad">{error}</p>}
         <div className="dialog-actions">
           <button disabled={!count?.cards} onClick={() => void go()}>

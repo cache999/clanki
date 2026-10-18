@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from . import media
 from .anki_format import OLC_MAX
 from .models import Note
 
@@ -49,7 +50,7 @@ def _check_one(n: Note) -> list[Issue]:
         if len([s for s in n.back.split(";") if s.strip()]) >= 4:
             out.append(_warn("back_is_list", "4 or more items in Back: consider a list card"))
         bad = {t.lower() for f in (n.front, n.back, n.why, n.reverse_prompt)
-               for t in _TAG.findall(_MATH.sub(" ", f))} - _ALLOWED_TAGS
+               for t in _TAG.findall(media.TAG.sub(" ", _MATH.sub(" ", f)))} - _ALLOWED_TAGS
         if bad:
             out.append(_warn("unsupported_html",
                              "Tags shown as text in Anki: " + ", ".join(sorted(bad))))

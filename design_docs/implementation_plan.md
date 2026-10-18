@@ -78,7 +78,8 @@ Single keys, active whenever you are not typing in a field; `?` shows the full s
 | `S` | Send new and edited cards to Anki |
 | `Shift+E` | Export `.txt` |
 | `O` / `Shift+O` | Open a document / a web page by its address |
-| `I` | Transcribe a figure: drag a box around it (or paste a screenshot with `Ctrl+V`), correct the text, `Ctrl+Enter`, then `G`/`N`/`L` |
+| `I` | Screenshot a figure: drag a box around it (or paste one with `Ctrl+V`); click picks one, `Shift`+click adds more |
+| `T` / `Shift+T` | Read the picked screenshots into text (one call each, joined) / read them again; then `Ctrl+Enter` and `G`/`N`/`L` |
 
 ## Generation pipeline
 
@@ -238,6 +239,14 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
      - MathJax: list items have `}}` and `{{` spaced apart on export, so a formula can't end a cloze early. The HTML check ignores maths, and clanki's card list renders it with KaTeX.
      - Paper links: arXiv `/abs`, `/pdf` and `/html` links and any page with `citation_pdf_url` metadata (bioRxiv, journals) open the paper's PDF under its title.
    - The `general` profile is for anyone: no student or background assumptions, and it follows the source's spelling.
+   - Screenshot cache, added after milestone 6:
+     - `I` and paste only save a screenshot (a `region` or `image` source with its image). Nothing goes to the model until `T`.
+     - Screenshots show in a tray and, for boxes, on the page: dashed when not picked, filled when picked. Click picks one, `Shift`+click toggles more, and the newest is picked alone.
+     - `T` runs one transcription job per picked screenshot, skipping any already read unless `Shift+T`. The texts are joined in picking order, each headed `[Image n, p.x]` when there are several.
+     - Cards made from several screenshots attach to the first. Each screenshot keeps its own transcript; a single one's text is replaced by the corrected snippet.
+     - Dragging a thumbnail onto a card shows drop targets for its fields (`media.IMAGE_FIELDS`); dropping appends `<img src="clanki-<source id>.<ext>">`.
+     - Send copies those images into Anki with `storeMediaFile`. clanki shows them via `/api/media/<name>`, and they are the only images the HTML rules allow.
+     - The AI never sees image tags: they are stripped from an AI edit's card and put back into its suggestion. The export dialog says how many cards have images (an import file can't carry them; `.apkg` export is future work).
    - Third-party notice: before the first AI action (generate, whole document, AI edit, reading a figure or screenshot, card-this-anyway, retry), a one-time dialog says what is sent to DeepSeek. It warns against sending others' intellectual property and confidential or patient data. Accepting is stored with the data (`llm_notice_accepted_at`). The dialog, not a button, takes focus, so the Enter that triggered the action can't accept it.
 
 ## Import tests (milestone 0, done)

@@ -28,3 +28,23 @@ export function sourceLabel(s: { kind: string; page: number; page_end: number | 
   const pages = pagesLabel([s.page, s.page_end ?? s.page]);
   return s.kind === "region" ? `${pages} figure` : s.kind === "image" ? `${pages} image` : pages;
 }
+
+/** The transcripts of several screenshots as one text, each labelled with where it came from. */
+export function joinTranscripts(shots: { page: number; text: string }[]): string {
+  if (shots.length === 1) return shots[0].text.trim();
+  return shots.map((s, i) => `[Image ${i + 1}, p.${s.page}]\n${s.text.trim()}`).join("\n\n");
+}
+
+/** The screenshot selection after a click: just this one, or with Shift, this one added or removed. */
+export function pickShot(selected: string[], id: string, shift: boolean): string[] {
+  if (!shift) return [id];
+  return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+}
+
+/** The drag-and-drop type of a screenshot dragged from the tray (its source id). */
+export const SHOT_TYPE = "application/x-clanki-shot";
+
+/** The fields a screenshot can be dropped on (media.IMAGE_FIELDS; a list's "why" is its Remarks). */
+export function imageFields(type: "qa" | "list"): [string, string][] {
+  return type === "qa" ? [["front", "Front"], ["back", "Back"], ["why", "Why"]] : [["why", "Remarks"], ["sources", "Sources"]];
+}

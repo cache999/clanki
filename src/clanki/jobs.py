@@ -7,10 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable
 
+from . import media
 from .doctext import document_text
 from .generation import GenerationError, GenOutput, parse_output, to_notes
 from .llm import LLMError
-from .models import Job
+from .models import Job, Note
 from .prompts import build_edit_messages, build_messages, build_transcribe_messages, load_profile
 from .store import Store
 
@@ -86,8 +87,9 @@ class JobRunner:
             if job.mode == "edit":
                 if not out.cards:
                     raise GenerationError("the model returned no card")
-                return self._finish(job_id, status="done", proposal=[c.model_dump() for c in out.cards],
-                                    flags=out.flags, **spent)
+                proposal = [c.model_dump() for c in out.cards]
+                proposal[0] = media.reattach(proposal[0], Note.model_validate(job.before))  # the model never saw them
+                return self._finish(job_id, status="done", proposal=proposal, flags=out.flags, **spent)
             made = to_notes(out, doc.id, job.source_id)
             first, last = job.pages
             pages = "p.%d" % first if first == last else "p.%d–%d" % (first, last)

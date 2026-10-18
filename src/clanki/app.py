@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import convert, web
+from . import convert, media, web
 from . import keys as keystore
 from .anki_format import export_txt
 from .anki_index import AnkiIndex
@@ -65,16 +65,28 @@ class SourceIn(BaseModel):
 class GenerateIn(BaseModel):
     mode: Literal["selection", "document"]
     selection: SourceIn | None = None
-    source_id: str | None = None  # generate from this (region or image) source, with the selection's text
+    # generate from these screenshots (cards attach to the first), with the selection's text; one
+    # screenshot's text is replaced by the selection, as corrected
+    source_ids: list[str] = []
     focus: str = ""
     model: str | None = None
 
 
-class TranscribeIn(BaseModel):
+class ScreenshotIn(BaseModel):
     page: int
     rect: list[float] | None = None  # a dragged box; none for a pasted screenshot
     image: str  # data URL
+
+
+class TranscribeIn(BaseModel):
+    source_ids: list[str]
+    force: bool = False  # read again even if already transcribed
     model: str | None = None
+
+
+class ImageIn(BaseModel):
+    source_id: str
+    field: str
 
 
 class SourceTextIn(BaseModel):
@@ -94,6 +106,7 @@ class ExportIn(BaseModel):
     preview: bool = False  # only count
 
 
+IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
 IMAGE_TYPES = {b"\x89PNG\r\n\x1a\n": "png", b"\xff\xd8\xff": "jpg", b"GIF8": "gif", b"RIFF": "webp"}
 MAX_IMAGE_BYTES = 20_000_000
 
@@ -341,19 +354,58 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             raise HTTPException(404, "source not found")
         return store.set_source_text(source_id, body.text)
 
-    @app.post("/api/documents/{doc_id}/transcribe")
-    def transcribe(doc_id: str, body: TranscribeIn):
-        """Read a dragged box or a pasted screenshot into text (the source's text, when done)."""
+    @app.post("/api/documents/{doc_id}/screenshots")
+    def add_screenshot(doc_id: str, body: ScreenshotIn) -> Source:
+        """Keep a dragged box or a pasted screenshot (nothing is sent to the model yet)."""
         get_doc(doc_id)
         data, ext = decode_image(body.image)
-        model = pick_model(body.model)
         src = store.add_source(Source(document_id=doc_id, kind="region" if body.rect else "image", page=body.page,
                                       text="", rects=[body.rect] if body.rect else []))
         (files / doc_id / "images").mkdir(parents=True, exist_ok=True)
         (files / doc_id / "images" / ("%s.%s" % (src.id, ext))).write_bytes(data)
-        j = runner.submit(Job(document_id=doc_id, source_id=src.id, mode="transcribe", profile=get_doc(doc_id).profile,
-                              pages=(body.page, body.page), target="", model=model))
-        return {"job": store.get_job(j.id), "source": store.get_source(src.id)}
+        return src
+
+    @app.post("/api/documents/{doc_id}/transcribe")
+    def transcribe(doc_id: str, body: TranscribeIn):
+        """Read screenshots into text, one job each; one already read is skipped unless forced."""
+        doc = get_doc(doc_id)
+        srcs = [get_source(doc_id, sid) for sid in body.source_ids]
+        if any(s.kind not in ("region", "image") for s in srcs):
+            raise HTTPException(422, "only screenshots can be transcribed")
+        model = pick_model(body.model)
+        jobs = [runner.submit(Job(document_id=doc_id, source_id=s.id, mode="transcribe", profile=doc.profile,
+                                  pages=(s.page, s.page), target="", model=model))
+                for s in srcs if body.force or not s.text.strip()]
+        return {"jobs": [store.get_job(j.id) for j in jobs]}
+
+    @app.get("/api/sources/{source_id}/image")
+    def source_image(source_id: str):
+        s = store.get_source(source_id)
+        p = image_path(s) if s else None
+        if p is None:
+            raise HTTPException(404, "no image")
+        return FileResponse(p, media_type=IMAGE_MIME[p.suffix[1:]])
+
+    @app.get("/api/media/{name}")
+    def card_image(name: str):
+        """A screenshot as a card shows it (media.TAG)."""
+        m = media.NAME.fullmatch(name)
+        return source_image(m.group(1)) if m else source_image("")
+
+    @app.delete("/api/sources/{source_id}")
+    def delete_screenshot(source_id: str):
+        s = store.get_source(source_id)
+        if s is None or s.kind not in ("region", "image"):
+            raise HTTPException(404, "screenshot not found")
+        using = [n for n in store.list_notes(s.document_id, include_deleted=True)
+                 if n.source_id == s.id or any(x.startswith("clanki-" + s.id) for x in media.names(n))]
+        if using:
+            raise HTTPException(409, "%d card%s use%s this screenshot" % (
+                len(using), "" if len(using) == 1 else "s", "s" if len(using) == 1 else ""))
+        if p := image_path(s):
+            p.unlink()
+        store.delete_source(s.id)
+        return {"ok": True}
 
     # notes
     @app.get("/api/documents/{doc_id}/notes")
@@ -394,6 +446,18 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         n = get_note(note_id)
         with store.action(n.document_id, "Restore card: " + _name(n)):
             return store.restore_note(note_id)
+
+    @app.post("/api/notes/{note_id}/images")
+    def add_image(note_id: str, body: ImageIn) -> Note:
+        """Append a screenshot to one of the card's fields."""
+        n = get_note(note_id)
+        if body.field not in media.IMAGE_FIELDS[n.type]:
+            raise HTTPException(422, "an image can't go in %s" % body.field)
+        p = image_path(get_source(n.document_id, body.source_id))
+        if p is None:
+            raise HTTPException(404, "no image")
+        with store.action(n.document_id, "Add image: " + _name(n)):
+            return store.update_note(note_id, {body.field: media.append(getattr(n, body.field), media.tag(body.source_id, p.suffix[1:]))})
 
     # undo history
     def step_result(r: dict) -> dict:
@@ -446,7 +510,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                 else:
                     chosen.append((doc, n))
         if body.preview:
-            return {"cards": len(chosen), "with_errors": with_errors}
+            return {"cards": len(chosen), "with_errors": with_errors,
+                    "with_images": sum(1 for _, n in chosen if media.names(n))}
         text = export_txt([for_anki(d, n) for d, n in chosen], default_deck=default_deck())
         if body.mark_exported:
             for _, n in chosen:
@@ -475,6 +540,10 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                 results[n.id] = SendResult(n.id, "failed", n.anki_note_id, "; ".join(errors))
             else:
                 ready.append(for_anki(doc, n))
+        for name in dict.fromkeys(x for n in ready if n.status != "sent" for x in media.names(n)):  # into Anki's media
+            src = store.get_source(media.NAME.fullmatch(name).group(1))
+            if src and (p := image_path(src)):
+                anki.call("storeMediaFile", filename=name, data=base64.b64encode(p.read_bytes()).decode())
         for r in anki.send(ready, default_deck=doc.deck or default_deck()):
             results[r.note_id] = r
             if r.action in ("added", "updated"):
@@ -492,8 +561,9 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             sel = body.selection
             if sel is None or not sel.text.strip():
                 raise HTTPException(422, "select some text first")
-            if body.source_id:  # a transcribed figure, with the text as the student corrected it
-                src = store.set_source_text(get_source(doc.id, body.source_id).id, sel.text)
+            if body.source_ids:  # screenshots, with the transcript as corrected
+                srcs = [get_source(doc.id, sid) for sid in body.source_ids]
+                src = store.set_source_text(srcs[0].id, sel.text) if len(srcs) == 1 else srcs[0]
             else:
                 src = store.add_source(Source(document_id=doc.id, **sel.model_dump()))
             mode = "figure" if src.kind in ("region", "image") else "highlight"
@@ -575,7 +645,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         src = store.get_source(n.source_id) if n.source_id else None
         pages = (src.page, src.page_end or src.page) if src else (1, 1)
         j = runner.submit(Job(document_id=n.document_id, source_id=n.source_id, note_id=n.id, mode="edit",
-                              profile=get_doc(n.document_id).profile, pages=pages, target=json.dumps(note_to_card(n), ensure_ascii=False),
+                              profile=get_doc(n.document_id).profile, pages=pages,
+                              target=json.dumps(note_to_card(media.strip(n)), ensure_ascii=False),
                               focus=instruction, model=model, before=n.model_dump()))
         return store.get_job(j.id)
 

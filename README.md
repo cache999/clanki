@@ -50,11 +50,18 @@ Press `?` in the app for all shortcuts. The main loop:
   that, or press Enter for everything UKMLA-relevant. `Shift+G` generates for the whole document
   after showing the estimated cost. `.` shows the jobs: progress, cost, errors, and what was left
   out under the UKMLA scope (with "Card this" to card it anyway).
-- For a figure, labelled diagram or table that is a picture: press `I` and drag a box around it,
-  or paste a screenshot with `Ctrl+V`. deepseek-flash reads it into text (labels as
-  `label: what it points to`, arrows as `A → B`) for about $0.0002. Correct the text, press
-  `Ctrl+Enter`, then `G` / `N` / `L` as for selected text; the cards point back to the figure.
-  For Image Occlusion cards, use Anki's own editor.
+- Screenshots of figures, labelled diagrams or tables:
+  - Press `I` and drag a box around one, or paste a screenshot with `Ctrl+V`. It's saved to the
+    tray under the reader bar and picked (filled in). Nothing is sent yet.
+  - Click a box or thumbnail to pick it, and `Shift`+click to add others.
+  - `T` reads the picked ones with deepseek-flash, about $0.0002 each: labels come out as
+    `label: what it points to`, arrows as `A → B`. Several are read separately and joined, each
+    headed `[Image n, p.x]`. A screenshot already read isn't sent again; `Shift+T` re-reads it.
+  - Correct the text, press `Ctrl+Enter`, then `G` / `N` / `L` as for selected text.
+  - Drag a thumbnail onto a card to add the image to the field you drop it on (Front, Back, Why;
+    a list's Remarks or Sources). Send to Anki copies the image into Anki; export files can't carry
+    images.
+  - For Image Occlusion cards, use Anki's own editor.
 - `Shift+O` (or Web page…) opens a web page by its address: its article and figures become a
   document like any other. Sites that block apps (e.g. Geeky Medics) or need a login can't be
   fetched; save the page from the browser instead (`Ctrl+P`, Save as PDF) and open that.

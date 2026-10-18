@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boxFromDrag, renderScale, sourceLabel } from "./figure";
+import { boxFromDrag, joinTranscripts, pickShot, renderScale, sourceLabel } from "./figure";
 
 const page = { left: 100, top: 50, width: 400, height: 600 };
 
@@ -35,5 +35,22 @@ describe("sourceLabel", () => {
     expect(sourceLabel({ kind: "chunk", page: 3, page_end: 6 })).toBe("p.3–6");
     expect(sourceLabel({ kind: "region", page: 3, page_end: null })).toBe("p.3 figure");
     expect(sourceLabel({ kind: "image", page: 3, page_end: null })).toBe("p.3 image");
+  });
+});
+
+describe("joinTranscripts", () => {
+  it("labels each image's text when there are several", () => {
+    const a = { page: 2, text: "A text" };
+    const b = { page: 5, text: "B text\n" };
+    expect(joinTranscripts([a])).toBe("A text");
+    expect(joinTranscripts([a, b])).toBe("[Image 1, p.2]\nA text\n\n[Image 2, p.5]\nB text");
+  });
+});
+
+describe("pickShot", () => {
+  it("selects one, or adds and removes with Shift", () => {
+    expect(pickShot(["a", "b"], "c", false)).toEqual(["c"]);
+    expect(pickShot(["a"], "c", true)).toEqual(["a", "c"]);
+    expect(pickShot(["a", "c"], "a", true)).toEqual(["c"]);
   });
 });

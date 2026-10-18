@@ -52,24 +52,48 @@ def doc(client):
     return client.post("/api/documents", files={"file": ("nerves.pdf", pdf, "application/pdf")}).json()
 
 
-def transcribe(client, doc, **kw):
+def capture(client, doc, **kw):
     body = {"page": 2, "rect": [0.1, 0.2, 0.5, 0.3], "image": PNG_URL, **kw}
-    r = client.post("/api/documents/%s/transcribe" % doc["id"], json=body)
+    r = client.post("/api/documents/%s/screenshots" % doc["id"], json=body)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def read(client, doc, *srcs, force=False):
+    r = client.post("/api/documents/%s/transcribe" % doc["id"], json={"source_ids": [x["id"] for x in srcs], "force": force})
+    assert r.status_code == 200, r.text
+    return r.json()["jobs"]
 
 
 def source(client, doc, sid):
     return next(s for s in client.get("/api/documents/%s/sources" % doc["id"]).json() if s["id"] == sid)
 
 
-def test_a_dragged_region_is_transcribed_into_its_source(client, doc, llm):
-    llm["p"] = ScriptedLLM(TRANSCRIPT)
-    r = transcribe(client, doc)
-    job, src = r["job"], r["source"]
-    assert (job["mode"], job["status"], job["source_id"], job["cost_usd"] > 0) == ("transcribe", "done", src["id"], True)
-    s = source(client, doc, src["id"])
-    assert (s["kind"], s["page"], s["rects"], s["text"]) == ("region", 2, [[0.1, 0.2, 0.5, 0.3]], TRANSCRIPT)
+def test_a_screenshot_is_cached_without_calling_the_model(client, doc, llm):
+    src = capture(client, doc)
+    assert (src["kind"], src["page"], src["rects"], src["text"]) == ("region", 2, [[0.1, 0.2, 0.5, 0.3]], "")
+    assert llm["p"].calls == [] and client.get("/api/documents/%s/jobs" % doc["id"]).json() == []
+    r = client.get("/api/sources/%s/image" % src["id"])
+    assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
+
+
+def test_a_pasted_screenshot_has_no_box(client, doc):
+    assert (capture(client, doc, rect=None)["kind"], capture(client, doc, rect=None)["rects"]) == ("image", [])
+
+
+@pytest.mark.parametrize("image", ["not a data url", "data:image/png;base64,bm90IGFuIGltYWdl",
+                                   "data:text/plain;base64," + base64.b64encode(PNG).decode()])
+def test_only_images_are_accepted(client, doc, image):
+    r = client.post("/api/documents/%s/screenshots" % doc["id"], json={"page": 1, "image": image})
+    assert r.status_code == 422
+
+
+def test_reading_transcribes_each_selected_image_separately(client, doc, llm):
+    llm["p"] = ScriptedLLM("Figure A text", "Figure B text")
+    a, b = capture(client, doc), capture(client, doc, rect=None)
+    jobs = read(client, doc, a, b)
+    assert [(j["mode"], j["status"], j["source_id"]) for j in jobs] == [("transcribe", "done", a["id"]), ("transcribe", "done", b["id"])]
+    assert (source(client, doc, a["id"])["text"], source(client, doc, b["id"])["text"]) == ("Figure A text", "Figure B text")
     call = llm["p"].calls[0]
     assert call["kw"].get("json_mode") is False
     text, image = call["messages"][1]["content"]
@@ -77,40 +101,38 @@ def test_a_dragged_region_is_transcribed_into_its_source(client, doc, llm):
     assert "carpal tunnel" in text["text"]  # the page's own text, to spell labels right
 
 
-def test_a_pasted_screenshot_has_no_box(client, doc, llm):
-    llm["p"] = ScriptedLLM(TRANSCRIPT)
-    src = transcribe(client, doc, rect=None)["source"]
-    assert (source(client, doc, src["id"])["kind"], source(client, doc, src["id"])["rects"]) == ("image", [])
-
-
-@pytest.mark.parametrize("image", ["not a data url", "data:image/png;base64,bm90IGFuIGltYWdl",
-                                   "data:text/plain;base64," + base64.b64encode(PNG).decode()])
-def test_only_images_are_accepted(client, doc, image):
-    r = client.post("/api/documents/%s/transcribe" % doc["id"], json={"page": 1, "image": image})
-    assert r.status_code == 422
+def test_a_read_image_is_not_sent_again_unless_forced(client, doc, llm):
+    llm["p"] = ScriptedLLM(TRANSCRIPT, "Re-read text")
+    a = capture(client, doc)
+    read(client, doc, a)
+    assert read(client, doc, a) == [] and len(llm["p"].calls) == 1
+    [job] = read(client, doc, a, force=True)
+    assert job["status"] == "done" and source(client, doc, a["id"])["text"] == "Re-read text"
 
 
 def test_an_empty_reply_fails_the_job(client, doc, llm):
     llm["p"] = ScriptedLLM("   ")
-    job = transcribe(client, doc)["job"]
+    [job] = read(client, doc, capture(client, doc))
     assert job["status"] == "failed" and "no text" in job["error"]
 
 
 def test_retry_transcribes_the_saved_image_again(client, doc, llm):
     llm["p"] = ScriptedLLM("", TRANSCRIPT)
-    r = transcribe(client, doc)
-    again = client.post("/api/jobs/%s/retry" % r["job"]["id"]).json()
-    assert again["status"] == "done" and source(client, doc, r["source"]["id"])["text"] == TRANSCRIPT
+    a = capture(client, doc)
+    [job] = read(client, doc, a)
+    again = client.post("/api/jobs/%s/retry" % job["id"]).json()
+    assert again["status"] == "done" and source(client, doc, a["id"])["text"] == TRANSCRIPT
     assert llm["p"].calls[1]["messages"][1]["content"][1]["image_url"]["url"] == PNG_URL
 
 
-def test_cards_are_generated_from_the_edited_transcript_on_the_same_source(client, doc, llm):
+def test_cards_from_one_image_use_its_corrected_transcript(client, doc, llm):
     llm["p"] = ScriptedLLM(TRANSCRIPT, cards(QA))
-    src = transcribe(client, doc)["source"]
+    src = capture(client, doc)
+    read(client, doc, src)
     edited = "Median nerve: carpal tunnel"
     sel = {"page": 2, "text": edited, "rects": src["rects"]}
     [job] = client.post("/api/documents/%s/generate" % doc["id"],
-                        json={"mode": "selection", "selection": sel, "source_id": src["id"]}).json()["jobs"]
+                        json={"mode": "selection", "selection": sel, "source_ids": [src["id"]]}).json()["jobs"]
     assert (job["mode"], job["source_id"], job["status"]) == ("figure", src["id"], "done")
     assert source(client, doc, src["id"])["text"] == edited
     assert len(client.get("/api/documents/%s/sources" % doc["id"]).json()) == 1
@@ -120,29 +142,53 @@ def test_cards_are_generated_from_the_edited_transcript_on_the_same_source(clien
     assert note["source_id"] == src["id"]
 
 
-def test_a_source_of_another_document_cannot_be_used(client, doc, llm):
+def test_cards_from_several_images_attach_to_the_first_and_keep_each_transcript(client, doc, llm):
+    llm["p"] = ScriptedLLM("A text", "B text", cards(QA))
+    a, b = capture(client, doc), capture(client, doc, rect=None)
+    read(client, doc, a, b)
+    combined = "[Image 1, p.2]\nA text\n\n[Image 2, p.2]\nB text"
+    sel = {"page": 2, "text": combined, "rects": a["rects"]}
+    [job] = client.post("/api/documents/%s/generate" % doc["id"],
+                        json={"mode": "selection", "selection": sel, "source_ids": [a["id"], b["id"]]}).json()["jobs"]
+    assert (job["source_id"], job["target"]) == (a["id"], combined)
+    assert (source(client, doc, a["id"])["text"], source(client, doc, b["id"])["text"]) == ("A text", "B text")
+
+
+def test_a_source_of_another_document_cannot_be_used(client, doc):
     other = client.post("/api/documents", files={"file": ("o.pdf", make_pdf([["x"]]), "application/pdf")}).json()
-    llm["p"] = ScriptedLLM(TRANSCRIPT)
-    src = transcribe(client, other)["source"]
+    src = capture(client, other)
     sel = {"page": 1, "text": "x", "rects": []}
-    r = client.post("/api/documents/%s/generate" % doc["id"], json={"mode": "selection", "selection": sel, "source_id": src["id"]})
+    r = client.post("/api/documents/%s/generate" % doc["id"], json={"mode": "selection", "selection": sel, "source_ids": [src["id"]]})
     assert r.status_code == 404
+    assert client.post("/api/documents/%s/transcribe" % doc["id"], json={"source_ids": [src["id"]]}).status_code == 404
 
 
 def test_the_transcript_can_be_corrected(client, doc, llm):
     llm["p"] = ScriptedLLM(TRANSCRIPT)
-    src = transcribe(client, doc)["source"]
+    src = capture(client, doc)
+    read(client, doc, src)
     r = client.patch("/api/sources/%s" % src["id"], json={"text": "Median nerve: carpal tunnel"})
     assert r.status_code == 200 and source(client, doc, src["id"])["text"] == "Median nerve: carpal tunnel"
 
 
 def test_ai_edits_see_the_transcript_as_the_source(client, doc, llm):
     llm["p"] = ScriptedLLM(TRANSCRIPT, cards(QA))
-    src = transcribe(client, doc)["source"]
+    src = capture(client, doc)
+    read(client, doc, src)
     note = client.post("/api/documents/%s/notes" % doc["id"],
                        json={"type": "qa", "front": "Median nerve (course)", "back": "x", "source_id": src["id"]}).json()
     client.post("/api/notes/%s/ai-edit" % note["id"], json={"instruction": "fix the back"})
     assert "<source pages=\"2\">\n" + TRANSCRIPT in llm["p"].calls[1]["messages"][1]["content"]
+
+
+def test_an_unused_screenshot_can_be_deleted_but_not_one_cards_use(client, doc):
+    unused, used = capture(client, doc), capture(client, doc)
+    client.post("/api/documents/%s/notes" % doc["id"], json={"type": "qa", "front": "F", "back": "B", "source_id": used["id"]})
+    assert client.delete("/api/sources/%s" % unused["id"]).status_code == 200
+    assert client.get("/api/sources/%s/image" % unused["id"]).status_code == 404
+    r = client.delete("/api/sources/%s" % used["id"])
+    assert r.status_code == 409 and "card" in r.json()["detail"]
+    assert [s["id"] for s in client.get("/api/documents/%s/sources" % doc["id"]).json()] == [used["id"]]
 
 
 def test_transcribe_prompt_has_the_image_and_page_text():

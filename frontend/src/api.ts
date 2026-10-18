@@ -146,7 +146,7 @@ export type SettingsPatch = Partial<{
 export type GenerateBody = {
   mode: "selection" | "document";
   selection?: Pick<Source, "page" | "text" | "rects">;
-  source_id?: string; // generate from this figure source, with the selection's text
+  source_ids?: string[]; // generate from these screenshots (cards attach to the first), with the selection's text
   focus?: string;
   model?: string;
 };
@@ -221,7 +221,8 @@ export const api = {
   redo: (docId: string, to?: number) =>
     call<StepResult>("POST", `/api/documents/${docId}/redo${to === undefined ? "" : `?to=${to}`}`),
   history: (docId: string) => call<HistoryEntry[]>("GET", `/api/documents/${docId}/history`),
-  exportPreview: (o: ExportOptions) => call<{ cards: number; with_errors: number }>("POST", "/api/export", { ...o, preview: true }),
+  exportPreview: (o: ExportOptions) =>
+    call<{ cards: number; with_errors: number; with_images: number }>("POST", "/api/export", { ...o, preview: true }),
   exportFile,
   openUrl: (url: string) => call<Doc>("POST", "/api/documents/url", { url }),
   upload: (file: File) => {
@@ -246,8 +247,13 @@ export const api = {
 
   ankiStatus: () => call<AnkiStatus>("GET", "/api/anki/status"),
   ankiDecks: () => call<string[]>("GET", "/api/anki/decks"),
-  transcribe: (docId: string, body: { page: number; rect: number[] | null; image: string }) =>
-    call<{ job: Job; source: Source }>("POST", `/api/documents/${docId}/transcribe`, body),
+  addScreenshot: (docId: string, body: { page: number; rect: number[] | null; image: string }) =>
+    call<Source>("POST", `/api/documents/${docId}/screenshots`, body),
+  transcribe: (docId: string, sourceIds: string[], force: boolean) =>
+    call<{ jobs: Job[] }>("POST", `/api/documents/${docId}/transcribe`, { source_ids: sourceIds, force }),
+  deleteSource: (id: string) => call<{ ok: boolean }>("DELETE", `/api/sources/${id}`),
+  addImage: (noteId: string, sourceId: string, field: string) =>
+    call<Note>("POST", `/api/notes/${noteId}/images`, { source_id: sourceId, field }),
   correctSource: (id: string, text: string) => call<Source>("PATCH", `/api/sources/${id}`, { text }),
   ankiRefresh: () => call<AnkiIndexSummary>("POST", "/api/anki/refresh"),
   send: (docId: string) => call<SendResponse>("POST", `/api/documents/${docId}/send`),
