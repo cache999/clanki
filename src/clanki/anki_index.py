@@ -1,10 +1,11 @@
 """A snapshot of the student's Anki notes, read through AnkiConnect (under a second for ~17k notes).
 It warns when a new card repeats one already in Anki, and supplies the facet counts for the prompt.
 Kept in clanki's database, so the warnings work while Anki is closed."""
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from .anki_format import BASIC, OVERLAP
+from .anki_format import BASIC, CLOZE, OVERLAP, reveal
 from .ankiconnect import AnkiConnect
 from .facets import count_facets, entity_key, plain, split_front
 from .generation import REVERSE_IN_BACK
@@ -20,6 +21,12 @@ def _key(s: str) -> str:
 
 def _short(s: str, n: int = 60) -> str:
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def cloze_lines(text: str) -> tuple[str, str]:
+    """A cloze's first line (its title, or the whole sentence) and the rest, answers shown, as plain text."""
+    first, *rest = re.split(r"<br\s*/?>|</?div>|\n", reveal(text), maxsplit=1)
+    return plain(first), plain(" ".join(rest))
 
 
 class AnkiIndex:
@@ -43,7 +50,7 @@ class AnkiIndex:
     @classmethod
     def fetch(cls, anki: AnkiConnect) -> "AnkiIndex":
         notes, cards, fronts = [], {}, []
-        for model in (BASIC, OVERLAP):
+        for model in (BASIC, OVERLAP, CLOZE):
             ids = anki.call("findNotes", query='"note:%s"' % model)
             for i in range(0, len(ids), _BATCH):
                 for info in anki.call("notesInfo", notes=ids[i:i + _BATCH]):
@@ -52,6 +59,9 @@ class AnkiIndex:
                         fronts.append(f.get("Front", ""))
                         a = {"type": "qa", "first": plain(f.get("Front", "")), "reverse": bool(f.get("Add Reverse", "").strip()),
                              "back": plain(REVERSE_IN_BACK.sub("", f.get("Back", "")))}
+                    elif model == CLOZE:
+                        first, rest = cloze_lines(f.get("Text", ""))
+                        a = {"type": "cloze", "first": first, "reverse": False, "back": rest}
                     else:
                         a = {"type": "list", "first": plain(f.get("Title", "")), "reverse": False,
                              "back": plain(f.get("Original", ""))}
@@ -81,7 +91,7 @@ class AnkiIndex:
 
     def _check_one(self, n: Note) -> list[Issue]:
         out = []
-        first = n.front if n.type == "qa" else n.title
+        first = {"qa": n.front, "list": n.title, "cloze": cloze_lines(n.text)[0]}[n.type]
         entity, facets = split_front(first)
         matches = [a for a, fs in self._by_entity.get(entity_key(entity), []) if not fs or not facets or fs & set(facets)]
         if matches:

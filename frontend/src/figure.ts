@@ -45,7 +45,14 @@ export function pickShot(selected: string[], id: string, shift: boolean): string
 /** The drag-and-drop type of a screenshot dragged from the tray (its source id). */
 export const SHOT_TYPE = "application/x-clanki-shot";
 
-/** The fields a screenshot can be dropped on (media.IMAGE_FIELDS; a list's "why" is its Remarks). */
-export function imageFields(type: "qa" | "list"): [string, string][] {
-  return type === "qa" ? [["front", "Front"], ["back", "Back"], ["why", "Why"]] : [["why", "Remarks"], ["sources", "Sources"]];
+const IMAGE_FIELDS: Record<"qa" | "list" | "cloze", [string, string][]> = {
+  qa: [["front", "Front"], ["back", "Back"], ["why", "Why"]],
+  list: [["why", "Remarks"], ["sources", "Sources"]],
+  cloze: [["text", "Text"], ["why", "Extra"]],
+};
+
+/** The fields a screenshot can be dropped on (media.IMAGE_FIELDS; "why" is a list's Remarks and a
+ * cloze's Extra). */
+export function imageFields(type: "qa" | "list" | "cloze"): [string, string][] {
+  return IMAGE_FIELDS[type];
 }

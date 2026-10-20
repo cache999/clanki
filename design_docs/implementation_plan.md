@@ -20,6 +20,7 @@ Status: ready to implement, 2026-10-17. Builds on `web_gui_spec.md` and `claude_
 - **`Basic (optional reversed card)`**: Front, Back, Add Reverse, Why. 15,255 notes; Add Reverse is set on 724 of them. Card 2 (reverse) shows Back as its prompt, which is why reversed Backs need the `(r: …)` prompt.
 - **`Cloze (overlapping)`**: Title, Original, Mnemonic, Remarks, Sources, Settings, Text1–Text20, Full (27 fields). Title comes first, but the builder in `claude_skill.md` assumed Original first. Its output would have filled the wrong fields on every list note.
 - **How you actually make lists** (this differs from the old skill, and the prompt follows your practice): settings are always `1,1,0 | n,n,n,n` with the whole-list card on. Sets get an imposed order (top-down anatomy, severity, frequency), stated in the Title or Remarks. `Original` uses `<br>` lines or `<ul>`. The Text fields wrap items in `<div>` or `<li>` to match.
+- **`Cloze`** (Anki's own): Text, Extra. 1,616 notes. The student's own cloze style (checked 2026-10-20 on their engineering notes): a title line, an empty line, then `property: {{c1::answer}}` lines; properties recalled together share c1, independent facts get c2, c3…; Extra explains. Newer Ankis name the second field `Back Extra`; clanki accepts either (`ankiconnect.RENAMED`).
 - Cloze Overlapper for 23x is installed (supports Anki up to 23.12.1). clanki fills Text1–20 and Full itself, so the add-on isn't needed when importing or sending (confirmed by test 1).
 - AnkiConnect (add-on code `2055492159`) is installed and verified on Anki 25.09.2 (2026-10-18).
 
@@ -70,6 +71,7 @@ The daily keys are on the left half of a QWERTY keyboard (2026-10-19), so the ri
 | Key | Action |
 |---|---|
 | `C` / `Shift+C` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
+| `V` | New cloze card, from the selection if any; in its text `Ctrl+Shift+C` clozes the selected words (next number), `Ctrl+Shift+Alt+C` with the last number |
 | `G` | Generate from the selection: opens the focus box; `Tab` with it empty runs unconditioned generation |
 | `Shift+G` | Generate for the whole document, after a cost estimate |
 | `Q` | Card from a prompt: a card on something the document may not cover, written from the model's knowledge |
@@ -260,6 +262,13 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - **Dropped images:** deepseek-flash also sometimes drops the image (seen 2026-10-18: prompt tokens were the text's alone, and the reply was "The image is unsupported"). The transcribe prompts ask for `NO_IMAGE` when no image is seen. A reply that says so, or whose prompt tokens are too few for the image's size, is retried once and then fails, caching nothing (`jobs._missed_image`). A refusal cached by an older version is read again.
    - **Cards from a prompt (`Q`):** a card on a request the document may not cover. The request is a `prompt` source on the page being read (no rects; left out of the coverage strip, labelled `p.n prompt`), and the job (mode `prompt`) keeps the cached document prefix but replaces the target and focus with the request. The rules tying cards to the source are lifted: the model writes from established knowledge, uses the document only for level and terms, and flags what it is unsure of. An AI edit of such a card shows the request, not a source.
    - **Two bars** in workflow order (see UI). The reader's grid column is `minmax(0, 1fr)`: a full screenshot tray used to widen the reader into the cards.
+
+8. **Cloze cards (2026-10-20)**: a third card type, `cloze`, sent as Anki's own `Cloze` note (Text, Extra).
+   - A note's `text` holds the cloze with its `{{cN::answer}}` deletions; `why` fills Extra. Errors: empty text, no cloze, an unclosed cloze. Duplicates compare the text with its answers shown; the Anki index matches a cloze by its first line. Images can go on Text and Extra.
+   - MathJax in a cloze has its `}}` spaced (`anki_format.cloze_text`), except in maths that holds a cloze.
+   - `V` makes one; `Ctrl+Shift+C` / `Ctrl+Shift+Alt+C` cloze the selection as in Anki. The card shows `Cloze · n` (the cards Anki makes) and marks each answer with its number.
+   - The medical prompt uses cloze only where a qa or list fits badly, in the student's two cases: properties of a set or comparison that should each be known when asked, without recalling the whole set from nothing (a title line, an empty line, `property: {{c1::answer}}` lines; interrelated properties share c1); and facts whose Front would need a long subquestion or wordy stem. It warns that cloze invites learning the sentence instead of the fact. A focus can name the type (`cloze`). The general and ml_papers prompts don't write clozes yet.
+   - Live check (deepseek-flash, $0.003): a slow vs fast-fatiguable motor unit passage became one cloze in that layout (c1–c3 grouping related properties) plus one qa card; the phototransduction passage gave qa cards and a process list, no cloze.
 
 ## Import tests (milestone 0, done)
 

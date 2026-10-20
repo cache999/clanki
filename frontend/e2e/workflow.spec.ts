@@ -512,3 +512,37 @@ test("each document has a profile, and MathJax on cards is rendered", async ({ p
   await page.reload();
   await expect(profile).toHaveValue("ml_papers");
 });
+
+test("cloze cards: V makes one, Ctrl+Shift+C clozes, Send uses Anki's Cloze note type", async ({ page, request }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  await select(page, "Rhodopsin absorbs");
+  await page.keyboard.press("v");
+  const text = page.locator('textarea[name="text"]');
+  await expect(text).toHaveValue("Rhodopsin absorbs maximally near 498 nm.");
+  await expect(text).toBeFocused();
+  const pick = (word: string) =>
+    text.evaluate((el: HTMLTextAreaElement, w) => el.setSelectionRange(el.value.indexOf(w), el.value.indexOf(w) + w.length), word);
+  await pick("498 nm");
+  await page.keyboard.press("Control+Shift+C");
+  await expect(text).toHaveValue("Rhodopsin absorbs maximally near {{c1::498 nm}}.");
+  await pick("Rhodopsin");
+  await page.keyboard.press("Control+Shift+Alt+C"); // the same number: shown together
+  await expect(text).toHaveValue("{{c1::Rhodopsin}} absorbs maximally near {{c1::498 nm}}.");
+  await page.keyboard.press("Tab");
+  await expect(page.locator('textarea[name="why"]')).toBeFocused();
+  await page.keyboard.type("Rods dominate scotopic vision.");
+  await page.keyboard.press("Control+s");
+
+  const made = page.locator(".card", { has: page.locator(".kind", { hasText: "Cloze" }) });
+  await expect(made.locator(".kind")).toHaveText("Cloze · 1");
+  await expect(made.locator(".cloze")).toHaveText(["Rhodopsin", "498 nm"]);
+  await expect(made).toContainText("Rods dominate scotopic vision.");
+
+  await page.keyboard.press("Shift+S");
+  await expect(page.locator(".toast")).toContainText("added");
+  const inAnki = Object.values(await (await request.get(ANKI)).json()) as { modelName: string; fields: Record<string, string> }[];
+  expect(inAnki.filter((n) => n.modelName === "Cloze").map((n) => n.fields)).toEqual([
+    { Text: "{{c1::Rhodopsin}} absorbs maximally near {{c1::498 nm}}.", Extra: "Rods dominate scotopic vision." },
+  ]);
+});

@@ -5,12 +5,13 @@ import re
 
 import httpx
 
-from clanki.anki_format import BASIC, BASIC_FIELDS, OVERLAP, OVERLAP_FIELDS
+from clanki.anki_format import BASIC, BASIC_FIELDS, CLOZE, CLOZE_FIELDS, OVERLAP, OVERLAP_FIELDS
 
 
 class FakeAnki:
     def __init__(self, models=None):
-        self.models = models if models is not None else {BASIC: list(BASIC_FIELDS), OVERLAP: list(OVERLAP_FIELDS)}
+        self.models = models if models is not None else {BASIC: list(BASIC_FIELDS), OVERLAP: list(OVERLAP_FIELDS),
+                                                         CLOZE: list(CLOZE_FIELDS)}
         self.decks = {"Default"}
         self.notes = {}  # id -> {"modelName", "deckName", "fields", "tags"}
         self.media = {}  # filename -> bytes
@@ -53,7 +54,9 @@ class FakeAnki:
     def a_canAddNotesWithErrorDetail(self, notes):
         out = []
         for n in notes:
-            if n["deckName"] not in self.decks:
+            if n["modelName"] not in self.models:
+                out.append({"canAdd": False, "error": "model was not found: " + n["modelName"]})
+            elif n["deckName"] not in self.decks:
                 out.append({"canAdd": False, "error": "deck was not found: " + n["deckName"]})
             elif self._duplicate(n):
                 out.append({"canAdd": False, "error": "cannot create note because it is a duplicate"})

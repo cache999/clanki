@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boxFromDrag, joinTranscripts, pickShot, renderScale, sourceLabel } from "./figure";
+import { boxFromDrag, imageFields, joinTranscripts, pickShot, renderScale, sourceLabel } from "./figure";
 
 const page = { left: 100, top: 50, width: 400, height: 600 };
 
@@ -53,5 +53,13 @@ describe("pickShot", () => {
     expect(pickShot(["a", "b"], "c", false)).toEqual(["c"]);
     expect(pickShot(["a"], "c", true)).toEqual(["a", "c"]);
     expect(pickShot(["a", "c"], "a", true)).toEqual(["c"]);
+  });
+});
+
+describe("imageFields", () => {
+  it("are the fields a screenshot can go on, as in media.IMAGE_FIELDS", () => {
+    expect(imageFields("qa").map(([f]) => f)).toEqual(["front", "back", "why"]);
+    expect(imageFields("list").map(([f]) => f)).toEqual(["why", "sources"]);
+    expect(imageFields("cloze")).toEqual([["text", "Text"], ["why", "Extra"]]);
   });
 });

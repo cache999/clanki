@@ -5,6 +5,7 @@
 export type Command =
   | "newCard"
   | "newList"
+  | "newCloze"
   | "generate"
   | "generateDocument"
   | "promptCard"
@@ -40,6 +41,7 @@ type Shortcut = { command: Command; keys: string[]; help: string; group: "Cards"
 export const SHORTCUTS: Shortcut[] = [
   { command: "newCard", keys: ["c", "n"], help: "New card (uses the selected text, if any)", group: "Cards" },
   { command: "newList", keys: ["Shift+c", "l"], help: "New list card (one item per selected line)", group: "Cards" },
+  { command: "newCloze", keys: ["v"], help: "New cloze card (uses the selected text, if any); in it, Ctrl+Shift+C clozes the selected words, Ctrl+Shift+Alt+C with the same number so they show together", group: "Cards" },
   { command: "generate", keys: ["g"], help: "Generate cards from the selection (type a focus such as MoA, or leave it empty; Tab or Enter generates)", group: "Generate" },
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
   { command: "promptCard", keys: ["q", "p"], help: "Card from a prompt: say what you want a card on, even if the document doesn't cover it (e.g. why hypoglycaemia causes decerebrate posture)", group: "Generate" },

@@ -284,6 +284,7 @@ export function ExportDialog(p: {
   const [scope, setScope] = useState<ExportOptions["scope"]>("unsent");
   const [qa, setQa] = useState(true);
   const [lists, setLists] = useState(true);
+  const [clozes, setClozes] = useState(true);
   const [tag, setTag] = useState("");
   const [all, setAll] = useState(false);
   const [mark, setMark] = useState(true);
@@ -292,7 +293,7 @@ export function ExportDialog(p: {
   const opts: ExportOptions = {
     document_ids: all ? p.allDocIds : [p.doc.id],
     scope,
-    types: [...(qa ? ["qa" as const] : []), ...(lists ? ["list" as const] : [])],
+    types: [...(qa ? ["qa" as const] : []), ...(lists ? ["list" as const] : []), ...(clozes ? ["cloze" as const] : [])],
     tag,
     mark_exported: mark,
   };
@@ -342,6 +343,9 @@ export function ExportDialog(p: {
           </label>
           <label className="choice">
             <input type="checkbox" checked={lists} onChange={(e) => setLists(e.target.checked)} /> Lists
+          </label>
+          <label className="choice">
+            <input type="checkbox" checked={clozes} onChange={(e) => setClozes(e.target.checked)} /> Clozes
           </label>
           <input value={tag} placeholder="only this tag (e.g. NHB)" onChange={(e) => setTag(e.target.value)} />
         </div>

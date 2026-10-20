@@ -1,7 +1,8 @@
 # clanki
 
 Read lecture slides and handouts, highlight passages, and turn them into Anki cards for your
-own note types (`Basic (optional reversed card)` with a `Why` field, and `Cloze (overlapping)`).
+own note types (`Basic (optional reversed card)` with a `Why` field, `Cloze (overlapping)`, and
+Anki's own `Cloze`).
 See `design_docs/implementation_plan.md` for the design and roadmap.
 
 All milestones are built (3, the prompt-quality loop, was skipped). clanki has:
@@ -80,6 +81,12 @@ the bottom one has the deck, tags, jobs, and Send and Export. The main loop:
   fetched; save the page from the browser instead (`Ctrl+P`, Save as PDF) and open that.
 - Or select text and press `C` for a card (Back is prefilled) or `Shift+C` for a list card
   (one item per bullet or line). `Tab` moves between fields; `Ctrl+S` saves.
+- `V` makes a cloze card (Anki's `Cloze` note type; its Why is the `Extra` field). Select words in
+  its text and press `Ctrl+Shift+C` to cloze them with the next number, or `Ctrl+Shift+Alt+C` to
+  reuse the last number so they show together on one card, as in Anki. The medical profile writes
+  clozes itself only where a Q/A or list fits badly: properties asked together (a title line, an
+  empty line, then `Fatigue: {{c1::resistant vs prone}}` lines) and facts whose question would be
+  too wordy. Type `cloze` as the focus after `G` to ask for clozes.
 - `Tab`/`Shift+Tab` move between cards, `E` edits, `R` toggles the reverse card and asks for the
   reverse prompt (sent as `Back<br>(r: prompt)`), `X` deletes, `Z` undoes.
 - `A` asks the AI to change the selected card: type what to change (`shorter front`,
@@ -87,7 +94,7 @@ the bottom one has the deck, tags, jobs, and Send and Export. The main loop:
   diff; `F` accepts it, `D` discards it. The card stays as it was until you accept.
 - `Shift+S` sends new and edited cards to Anki (edited cards are updated in place). It needs Shift
   so a stray `S` beside `D` and `F` sends nothing. Cards with errors stay in clanki until fixed.
-- `Shift+E` exports an import file. Choose new and edited or all cards, Q/A and/or lists, a tag,
+- `Shift+E` exports an import file. Choose new and edited or all cards, Q/A, lists and/or clozes, a tag,
   and this document or all of them. Exported cards are marked `exported` so `Shift+S` skips them. Import
   the file in Anki with File ▸ Import. To update an exported card after editing it, export it again:
   the re-import updates it in Anki.

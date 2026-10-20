@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict
 
 from . import convert, media, web
 from . import keys as keystore
-from .anki_format import export_txt
+from .anki_format import export_txt, reveal
 from .anki_index import AnkiIndex
 from .ankiconnect import AnkiConnect, AnkiError, AnkiUnavailable, SendResult
 from .config import Config, save_config
@@ -104,7 +104,7 @@ class UrlIn(BaseModel):
 class ExportIn(BaseModel):
     document_ids: list[str]
     scope: Literal["unsent", "all"] = "unsent"  # unsent: new and edited cards
-    types: list[Literal["qa", "list"]] = ["qa", "list"]
+    types: list[Literal["qa", "list", "cloze"]] = ["qa", "list", "cloze"]
     tag: str = ""  # this tag or one under it (NHB matches NHB::vision), on the card or its document
     mark_exported: bool = True
     preview: bool = False  # only count
@@ -140,7 +140,8 @@ class EditIn(BaseModel):
 
 def _name(n: Note) -> str:
     """A card's first field, short, for the undo history."""
-    s = " ".join((n.front if n.type == "qa" else n.title).split()) or "(empty)"
+    first = {"qa": n.front, "list": n.title, "cloze": (reveal(n.text).strip().splitlines() or [""])[0]}[n.type]
+    s = " ".join(first.split()) or "(empty)"
     return s if len(s) <= 50 else s[:49] + "…"
 
 
@@ -154,10 +155,13 @@ def _replacement_patch(n: Note) -> dict:
     if n.type == "qa":
         return {"type": "qa", "front": n.front, "back": n.back, "why": n.why, "add_reverse": n.add_reverse,
                 "reverse_prompt": n.reverse_prompt, "facets": n.facets, "kind": n.kind, "flags": n.flags,
-                "title": "", "items": []}
+                "title": "", "items": [], "text": ""}
+    if n.type == "cloze":
+        return {"type": "cloze", "text": n.text, "why": n.why, "kind": n.kind, "flags": n.flags, "front": "",
+                "back": "", "add_reverse": False, "reverse_prompt": "", "title": "", "items": []}
     return {"type": "list", "title": n.title, "items": n.items, "why": n.why, "mnemonic": n.mnemonic,
             "full": n.full, "kind": n.kind, "flags": n.flags, "front": "", "back": "", "add_reverse": False,
-            "reverse_prompt": ""}
+            "reverse_prompt": "", "text": ""}
 
 
 class SettingsIn(BaseModel):

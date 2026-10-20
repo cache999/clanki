@@ -11,7 +11,7 @@ def test_profile_loads_with_label_and_a_json_example():
     assert p.label == "Medical (UKMLA)"
     assert "JSON" in p.system  # DeepSeek's JSON mode needs the word and an example
     example = json.dumps(EXAMPLE_OUTPUT, ensure_ascii=False, indent=1)
-    assert example in p.system and len(parse_output(example).cards) == 3
+    assert example in p.system and len(parse_output(example).cards) == 4
     assert "{EXAMPLE}" not in p.system
 
 

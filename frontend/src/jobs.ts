@@ -54,7 +54,10 @@ type CardFields = {
   items?: string[];
   mnemonic?: string;
   full?: boolean;
+  text?: string;
 };
+
+const TYPE_LABELS: Record<string, string> = { qa: "Q/A", list: "List", cloze: "Cloze" };
 
 /** Fields a suggested card changes, as text, compared with the card as it is. `before` is a note
  * (lists keep remarks in why); `after` is a card in the model's reply format. */
@@ -62,8 +65,11 @@ export function cardDiff(before: CardFields, after: CardFields) {
   const onOff = (b: boolean | undefined) => (b ? "on" : "off");
   const txt = (s: string | undefined) => s ?? "";
   const rows: [string, string, string][] = [];
-  if (before.type !== after.type) rows.push(["Type", before.type === "qa" ? "Q/A" : "List", after.type === "qa" ? "Q/A" : "List"]);
-  if (after.type === "qa") {
+  if (before.type !== after.type) rows.push(["Type", TYPE_LABELS[before.type], TYPE_LABELS[after.type]]);
+  if (after.type === "cloze") {
+    rows.push(["Text", txt(before.text), txt(after.text)]);
+    rows.push(["Extra", txt(before.why), txt(after.why)]);
+  } else if (after.type === "qa") {
     rows.push(["Front", txt(before.front), txt(after.front)]);
     rows.push(["Back", txt(before.back), txt(after.back)]);
     rows.push(["Reverse", onOff(before.add_reverse), onOff(after.add_reverse)]);

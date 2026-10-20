@@ -6,10 +6,11 @@ from typing import Literal
 from pydantic import BaseModel
 
 from . import media
-from .anki_format import OLC_MAX
+from .anki_format import CLOZE_DELETION, OLC_MAX, reveal
 from .models import Note
 
 LONG_LIST = 8
+_FIRST = {"qa": "Front", "list": "Title", "cloze": "Text"}  # the field Anki checks for duplicates
 _ALLOWED_TAGS = {"b", "i", "u", "sub", "sup", "br"}
 _TAG = re.compile(r"</?\s*([a-zA-Z][a-zA-Z0-9]*)")
 _MATH = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.S)  # MathJax: \( ... \) and \[ ... \], where "<" is maths
@@ -37,8 +38,21 @@ def _items(n: Note) -> list[str]:
     return [x for x in n.items if x.strip()]
 
 
+def _unsupported_html(*fields: str) -> list[Issue]:
+    bad = {t.lower() for f in fields for t in _TAG.findall(media.TAG.sub(" ", _MATH.sub(" ", f)))} - _ALLOWED_TAGS
+    return [_warn("unsupported_html", "Tags shown as text in Anki: " + ", ".join(sorted(bad)))] if bad else []
+
+
 def _check_one(n: Note) -> list[Issue]:
     out = [_warn("model_flag", f) for f in n.flags if f.strip()]
+    if n.type == "cloze":
+        if not n.text.strip():
+            return out + [_err("empty_text", "Text is empty")]
+        if re.search(r"\{\{c\d+::", CLOZE_DELETION.sub("", n.text)):
+            out.append(_err("unclosed_cloze", "A cloze is not closed: end it with }}"))
+        elif not CLOZE_DELETION.search(n.text):
+            out.append(_err("no_cloze", "No cloze: mark what to recall as {{c1::...}} (Ctrl+Shift+C)"))
+        return out + _unsupported_html(n.text, n.why)
     if n.type == "qa":
         if not n.front.strip():
             out.append(_err("empty_front", "Front is empty"))
@@ -49,12 +63,7 @@ def _check_one(n: Note) -> list[Issue]:
                              "Reverse card on but no reverse prompt to recover the Front"))
         if len([s for s in n.back.split(";") if s.strip()]) >= 4:
             out.append(_warn("back_is_list", "4 or more items in Back: consider a list card"))
-        bad = {t.lower() for f in (n.front, n.back, n.why, n.reverse_prompt)
-               for t in _TAG.findall(media.TAG.sub(" ", _MATH.sub(" ", f)))} - _ALLOWED_TAGS
-        if bad:
-            out.append(_warn("unsupported_html",
-                             "Tags shown as text in Anki: " + ", ".join(sorted(bad))))
-        return out
+        return out + _unsupported_html(n.front, n.back, n.why, n.reverse_prompt)
     items = _items(n)
     if not 2 <= len(items) <= OLC_MAX:
         out.append(_err("list_size", "A list needs 2-%d items (has %d)" % (OLC_MAX, len(items))))
@@ -75,14 +84,13 @@ def validate(notes: list[Note]) -> list[list[Issue]]:
     first = defaultdict(list)
     for i in live:
         n = notes[i]
-        k = _key(n.front if n.type == "qa" else n.title)
+        k = _key({"qa": n.front, "list": n.title, "cloze": reveal(n.text)}[n.type])
         if k:
             first[(n.type, k)].append(i)
     for group in first.values():
         if len(group) > 1:
             for i in group:
-                issues[i].append(_err("duplicate_first_field",
-                                      "Same %s as another card" % ("Front" if notes[i].type == "qa" else "Title")))
+                issues[i].append(_err("duplicate_first_field", "Same %s as another card" % _FIRST[notes[i].type]))
 
     backs = defaultdict(list)
     for i in live:

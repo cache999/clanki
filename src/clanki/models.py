@@ -14,14 +14,15 @@ def new_guid() -> str:
 
 
 class Note(BaseModel):
-    """One Anki note. `type` qa -> Basic (optional reversed card); list -> Cloze (overlapping).
+    """One Anki note. `type` qa -> Basic (optional reversed card); list -> Cloze (overlapping);
+    cloze -> Anki's own Cloze.
 
-    For lists, `why` fills the Remarks field."""
+    For lists, `why` fills the Remarks field; for clozes, Extra."""
     id: str | None = None
     guid: str = Field(default_factory=new_guid)
     document_id: str | None = None
     source_id: str | None = None
-    type: Literal["qa", "list"]
+    type: Literal["qa", "list", "cloze"]
     # qa
     front: str = ""
     back: str = ""
@@ -34,7 +35,9 @@ class Note(BaseModel):
     style: Literal["div", "ul"] = "div"
     mnemonic: str = ""
     sources: str = ""
-    # both
+    # cloze: the text with its deletions, {{c1::...}}
+    text: str = ""
+    # all
     why: str = ""
     deck: str = ""
     tags: list[str] = Field(default_factory=list)

@@ -34,13 +34,21 @@ class GenList(BaseModel):
     flags: list[str] = []
 
 
+class GenCloze(BaseModel):
+    type: Literal["cloze"]
+    kind: str = ""
+    text: str = Field(min_length=1)
+    why: str = ""
+    flags: list[str] = []
+
+
 class LeftOut(BaseModel):
     text: str
     reason: str = ""
 
 
 class GenOutput(BaseModel):
-    cards: list[Annotated[GenQA | GenList, Field(discriminator="type")]]
+    cards: list[Annotated[GenQA | GenList | GenCloze, Field(discriminator="type")]]
     left_out: list[LeftOut] = []
     image_occlusion_candidates: list[str] = []
     flags: list[str] = []
@@ -66,6 +74,14 @@ EXAMPLE_OUTPUT = {
          "items": ["Oculomotor (III)", "Facial (VII)", "Glossopharyngeal (IX)", "Vagus (X)"],
          "order_principle": "numerical", "remarks": "", "mnemonic": "1973 (III, VII, IX, X)", "full": True,
          "flags": []},
+        {"type": "cloze", "kind": "set",
+         "text": "Slow vs fast-fatiguable motor units: physiological properties\n\n"
+                 "Axon conduction speed: {{c1::slow vs fast}}\nContraction speed: {{c1::slow vs fast}}\n"
+                 "Tension generated: {{c1::low vs high}}\nFatigue: {{c1::resistant vs prone}}",
+         "why": "Slow units have small motor neurons with thin axons and few oxidative (type I) fibres, "
+                "rich in mitochondria and capillaries; fast-fatiguable units have large neurons and many "
+                "glycolytic (type IIx) fibres.",
+         "flags": []},
     ],
     "left_out": [{"text": "Course timetable and reading list", "reason": "not testable"}],
     "image_occlusion_candidates": ["p.4 diagram: layers of the retina"],
@@ -88,7 +104,7 @@ def parse_output(text: str) -> GenOutput:
         raise GenerationError('reply has no "cards" list')
     for c in data["cards"]:
         if isinstance(c, dict) and "type" not in c:
-            c["type"] = "list" if "items" in c else "qa"
+            c["type"] = "list" if "items" in c else "cloze" if "text" in c else "qa"
     try:
         return _OUTPUT.validate_python(data)
     except ValidationError as e:
@@ -102,6 +118,8 @@ def note_to_card(n: Note) -> dict:
     if n.type == "qa":
         return {"type": "qa", "kind": n.kind, "front": n.front, "back": n.back, "why": n.why,
                 "add_reverse": n.add_reverse, "reverse_prompt": n.reverse_prompt, "facets": n.facets, "flags": []}
+    if n.type == "cloze":
+        return {"type": "cloze", "kind": n.kind, "text": n.text, "why": n.why, "flags": []}
     return {"type": "list", "kind": n.kind, "title": n.title, "items": n.items, "order_principle": "",
             "remarks": n.why, "mnemonic": n.mnemonic, "full": n.full, "flags": []}
 
@@ -125,6 +143,8 @@ def to_notes(out: GenOutput, document_id: str, source_id: str | None) -> list[No
                 back, prompt = back[:m.start()], prompt or m.group(1)
             notes.append(Note(type="qa", front=c.front, back=back, why=c.why, add_reverse=c.add_reverse,
                               reverse_prompt=prompt, facets=c.facets, **common))
+        elif c.type == "cloze":
+            notes.append(Note(type="cloze", text=c.text, why=c.why, **common))
         else:
             notes.append(Note(type="list", title=c.title, items=c.items, why=c.remarks,
                               mnemonic=c.mnemonic, full=c.full, **common))

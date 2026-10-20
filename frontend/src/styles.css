@@ -143,6 +143,8 @@ kbd {
 .back { margin-top: 1px; }
 .back > div { display: inline; }
 .rprompt { color: var(--muted); margin-left: 6px; }
+.cloze { color: var(--accent); font-weight: 600; }
+.cloze::before { content: "c" attr(data-c) " "; color: var(--muted); font-size: 10px; font-weight: 400; vertical-align: super; }
 .why { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .tags { color: var(--muted); font-size: 12px; }
 .items { margin: 2px 0 0; padding-left: 22px; }

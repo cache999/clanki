@@ -386,8 +386,9 @@ export function App() {
   function startNew(type: Note["type"]) {
     if (!doc) return say("Open a document first (O)");
     const sel = selection ?? undefined;
+    const text = sel ? joinLines(sel.text) : "";
     const base: NoteDraft =
-      type === "qa" ? { type, back: sel ? joinLines(sel.text) : "" } : { type, items: sel ? splitItems(sel.text) : [] };
+      type === "qa" ? { type, back: text } : type === "cloze" ? { type, text } : { type, items: sel ? splitItems(sel.text) : [] };
     setDraft({ ...base, sel });
     setEditing({ id: "draft" });
   }
@@ -485,6 +486,8 @@ export function App() {
         return startNew("qa");
       case "newList":
         return startNew("list");
+      case "newCloze":
+        return startNew("cloze");
       case "generate":
         if (!doc) return say("Open a document first (O)");
         if (!selection) return say("Select text first, or press Shift+G for the whole document");

@@ -60,4 +60,14 @@ describe("cardDiff", () => {
     const after = { type: "list", title: "Layers (outer to inner)", items: ["a", "b"], remarks: "" };
     expect(cardDiff(before, after).map((d) => d.label)).toEqual(["Type", "Title", "Items"]);
   });
+
+  it("shows a cloze's text and extra", () => {
+    const before = { type: "qa", front: "Rhodopsin peak", back: "~498 nm" };
+    const after = { type: "cloze", text: "Rhodopsin peaks near {{c1::~498 nm}}", why: "Rods." };
+    expect(cardDiff(before, after)).toEqual([
+      { label: "Type", old: "Q/A", new: "Cloze" },
+      { label: "Text", old: "", new: "Rhodopsin peaks near {{c1::~498 nm}}" },
+      { label: "Extra", old: "", new: "Rods." },
+    ]);
+  });
 });

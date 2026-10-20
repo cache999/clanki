@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from clanki.anki_format import BASIC, BASIC_FIELDS, OVERLAP, OVERLAP_FIELDS
+from clanki.anki_format import BASIC, BASIC_FIELDS, CLOZE, CLOZE_FIELDS, OVERLAP, OVERLAP_FIELDS
 from clanki.ankiconnect import AnkiConnect, AnkiUnavailable
 from clanki.models import Note
 
@@ -23,7 +23,7 @@ def test_status_ok_when_note_types_match(client):
 
 
 def test_status_reports_missing_why_field():
-    fake = FakeAnki(models={BASIC: ["Front", "Back", "Add Reverse"], OVERLAP: list(OVERLAP_FIELDS)})
+    fake = FakeAnki(models={BASIC: ["Front", "Back", "Add Reverse"], OVERLAP: list(OVERLAP_FIELDS), CLOZE: CLOZE_FIELDS})
     st = AnkiConnect(transport=fake.transport()).status()
     assert st["connected"]
     assert st["problems"] == ["Note type 'Basic (optional reversed card)' fields should start with: "
@@ -31,13 +31,13 @@ def test_status_reports_missing_why_field():
 
 
 def test_status_reports_missing_note_type():
-    fake = FakeAnki(models={BASIC: list(BASIC_FIELDS)})
+    fake = FakeAnki(models={BASIC: list(BASIC_FIELDS), CLOZE: CLOZE_FIELDS})
     assert AnkiConnect(transport=fake.transport()).status()["problems"] == [
         "Note type 'Cloze (overlapping)' not found in Anki"]
 
 
 def test_extra_trailing_fields_are_fine():
-    fake = FakeAnki(models={BASIC: BASIC_FIELDS + ["Extra"], OVERLAP: list(OVERLAP_FIELDS)})
+    fake = FakeAnki(models={BASIC: BASIC_FIELDS + ["Extra"], OVERLAP: list(OVERLAP_FIELDS), CLOZE: CLOZE_FIELDS + ["x"]})
     assert AnkiConnect(transport=fake.transport()).status()["problems"] == []
 
 

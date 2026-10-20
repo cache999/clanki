@@ -11,6 +11,8 @@ OVERLAP = "Cloze (overlapping)"
 OLC_MAX = 20
 OVERLAP_FIELDS = (["Title", "Original", "Mnemonic", "Remarks", "Sources", "Settings"]
                   + ["Text%d" % k for k in range(1, OLC_MAX + 1)] + ["Full"])
+CLOZE = "Cloze"
+CLOZE_FIELDS = ["Text", "Extra"]  # newer Ankis name the second field "Back Extra" (see ankiconnect)
 N_FIELDS = len(OVERLAP_FIELDS)  # widest note type; every export row is padded to it
 REVERSE_FORMAT = "<br>(r: {prompt})"
 
@@ -53,6 +55,21 @@ def cloze_safe(s: str) -> str:
     return s
 
 
+_MATH = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.S)
+CLOZE_DELETION = re.compile(r"\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}", re.S)  # {{c1::answer}} or {{c1::answer::hint}}
+
+
+def reveal(s: str) -> str:
+    """A cloze's text with its answers shown."""
+    return CLOZE_DELETION.sub(lambda m: m.group(2), s)
+
+
+def cloze_text(s: str) -> str:
+    r"""A cloze's text as field HTML. MathJax in it gets its "{{" and "}}" spaced (a cloze would end at
+    the "}}" of \frac{1}{\sqrt{d}}), except where a cloze is inside the maths."""
+    return rich(_MATH.sub(lambda m: m.group(0) if "{{c" in m.group(0) else cloze_safe(m.group(0)), s))
+
+
 def overlap_fields(title, items, remarks="", mnemonic="", sources="", style="div", full=True) -> list[str]:
     """Every Cloze (overlapping) field, filled as the add-on's generator does with
     settings 1,1,0: item k is clozed, item k-1 shown, the rest '...'."""
@@ -77,6 +94,8 @@ def note_fields(n: Note) -> tuple[str, dict[str, str]]:
         values = [rich(n.front), assemble_back(n.back, n.add_reverse, n.reverse_prompt),
                   "y" if n.add_reverse else "", rich(n.why)]
         return BASIC, dict(zip(BASIC_FIELDS, values))
+    if n.type == "cloze":
+        return CLOZE, dict(zip(CLOZE_FIELDS, [cloze_text(n.text), rich(n.why)]))
     values = overlap_fields(n.title, n.items, remarks=n.why, mnemonic=n.mnemonic,
                             sources=n.sources, style=n.style, full=n.full)
     return OVERLAP, dict(zip(OVERLAP_FIELDS, values))

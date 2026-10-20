@@ -7,7 +7,7 @@ export type Note = {
   guid: string;
   document_id: string | null;
   source_id: string | null;
-  type: "qa" | "list";
+  type: "qa" | "list" | "cloze"; // cloze: Anki's own Cloze note, its answers marked {{c1::...}} in text
   front: string;
   back: string;
   add_reverse: boolean;
@@ -18,7 +18,8 @@ export type Note = {
   style: "div" | "ul";
   mnemonic: string;
   sources: string;
-  why: string;
+  text: string;
+  why: string; // a list's Remarks, a cloze's Extra
   deck: string;
   tags: string[];
   status: "new" | "sent" | "edited" | "exported"; // exported: imported into Anki from an export file
@@ -60,7 +61,8 @@ export type Source = {
 
 /** A card in the model's reply format (lists keep their Why in remarks). */
 export type ProposedCard = {
-  type: "qa" | "list";
+  type: "qa" | "list" | "cloze";
+  text?: string;
   kind?: string;
   front?: string;
   back?: string;
@@ -211,7 +213,7 @@ async function failure(r: Response): Promise<ApiError> {
 export type ExportOptions = {
   document_ids: string[];
   scope: "unsent" | "all";
-  types: ("qa" | "list")[];
+  types: Note["type"][];
   tag: string;
   mark_exported: boolean;
 };

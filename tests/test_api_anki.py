@@ -70,14 +70,14 @@ def test_status_reads_the_collection_once_and_reports_it(client, fake):
     st = client.get("/api/anki/status").json()
     assert st["connected"] and st["index"]["notes"] == 6 and st["index"]["refreshed_at"]
     client.get("/api/anki/status")
-    assert fake.calls.count("findNotes") == 2  # one per note type, not again on the next poll
+    assert fake.calls.count("findNotes") == 3  # one per note type, not again on the next poll
 
 
 def test_a_stale_index_is_read_again(client, fake, monkeypatch):
     client.get("/api/anki/status")
     monkeypatch.setattr(clanki.app, "INDEX_MAX_AGE_S", 0)
     client.get("/api/anki/status")
-    assert fake.calls.count("findNotes") == 4
+    assert fake.calls.count("findNotes") == 6
 
 
 def test_refresh_on_demand(client, fake):

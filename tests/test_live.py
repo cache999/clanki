@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from clanki.generation import parse_output
+from clanki.generation import parse_output, to_notes
 from clanki.llm import DeepSeek
 from clanki.prompts import build_edit_messages, build_messages, build_transcribe_messages, load_profile
+from clanki.validators import validate
 
 pytestmark = [pytest.mark.live,
               pytest.mark.skipif(not os.environ.get("DEEPSEEK_API_KEY"), reason="DEEPSEEK_API_KEY not set")]
@@ -37,8 +38,7 @@ def test_flash_returns_usable_cards(deepseek):
     assert 0 < r.cost_usd < 0.05
     print("\n%d cards, usage %s, cost $%.5f" % (len(out.cards), r.usage, r.cost_usd))
     for c in out.cards:
-        print(" -", c.type, "|", getattr(c, "front", None) or c.title, "|",
-              getattr(c, "back", None) or "; ".join(c.items), "| rev:", getattr(c, "reverse_prompt", ""))
+        print(" -", _line(c), "| rev:", getattr(c, "reverse_prompt", ""))
 
 
 def test_flash_edit_follows_the_instruction(deepseek):
@@ -80,11 +80,16 @@ def test_flash_card_from_a_prompt(deepseek):
     assert any("decerebrat" in (getattr(c, "front", "") + getattr(c, "back", "") + c.why).lower() for c in out.cards)
 
 
+def _line(c) -> str:
+    if c.type == "cloze":
+        return "cloze | %s" % c.text.replace("\n", " / ")
+    return "%s | %s | %s" % (c.type, getattr(c, "front", None) or c.title, getattr(c, "back", None) or "; ".join(c.items))
+
+
 def _show(r, out):
     print("\nusage %s, cost $%.5f" % (r.usage, r.cost_usd))
     for c in out.cards:
-        print(" -", c.type, "|", getattr(c, "front", None) or c.title, "|",
-              getattr(c, "back", None) or "; ".join(c.items), "| why:", c.why if c.type == "qa" else c.remarks)
+        print(" -", _line(c), "| why:", c.remarks if c.type == "list" else c.why)
     print(" left out:", [x.text for x in out.left_out])
 
 
@@ -119,3 +124,29 @@ def test_flash_general_profile(deepseek):
     out = parse_output(r.text)
     _show(r, out)
     assert out.cards and "ukmla" not in r.text.lower()
+
+
+MOTOR_UNITS = ("Motor units\nSlow (type S) motor units have small motor neurons with thin, slowly conducting axons. "
+               "Their few muscle fibres are type I: they contract slowly, generate little tension and resist fatigue. "
+               "Fast-fatiguable (type FF) motor units have large motor neurons with fast-conducting axons and many "
+               "type IIx fibres, which contract quickly, generate high tension and fatigue within minutes.")
+
+
+def test_flash_clozes_a_comparison_of_properties(deepseek):
+    msgs = build_messages(load_profile("medical_ukmla"), title="Muscle", pages=[MOTOR_UNITS], target=MOTOR_UNITS,
+                          target_pages=(1, 1), focus="", mode="highlight")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    notes = to_notes(out, "d", None)
+    assert any(c.type == "cloze" for c in out.cards)
+    assert not [i for issues in validate(notes) for i in issues if i.level == "error"]
+
+
+def test_flash_does_not_cloze_what_fits_a_card_or_a_list(deepseek):
+    msgs = build_messages(load_profile("medical_ukmla"), title="Vision", pages=PAGES, target=PAGES[0],
+                          target_pages=(1, 1), focus="", mode="highlight")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    assert not any(c.type == "cloze" for c in out.cards)

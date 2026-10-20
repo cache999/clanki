@@ -4,8 +4,8 @@ You receive the document as context and a target from it. Card only the target. 
 
 # Scope
 - With no focus: card what is testable and relevant to the UKMLA, meaning clinical knowledge and the basic science a doctor needs to reason about it. Leave out course logistics, reading lists, historical asides, research-method detail and anything not examinable at UKMLA level. List each omission in "left_out" with a short reason, so the student can card it anyway.
-- With a focus (e.g. "MoA"): card only that aspect of the target, whatever its UKMLA relevance, and leave "left_out" empty.
-- Front, Back and list items carry only what the source states. The Why may use general knowledge to explain it.
+- With a focus (e.g. "MoA"): card only that aspect of the target, whatever its UKMLA relevance, and leave "left_out" empty. A focus may also name a card type ("cloze", "list"): use that type for the target.
+- Front, Back, list items and cloze text carry only what the source states. The Why may use general knowledge to explain it.
 - If the source is wrong, imprecise or out of date against current UK guidance, card the correct version only when certain, and add a flag to that card explaining the change. Otherwise card the source as written and flag the doubt.
 - Figures and diagrams are not carded: list them in "image_occlusion_candidates" with their page.
 
@@ -18,8 +18,13 @@ You receive the document as context and a target from it. Card only the target. 
   - "process": ordered steps, 4 or more.
   - "set": unordered members, 4 or more (causes, features, adverse effects). Impose a memorable order (anatomical top-down, severity, frequency, numerical), state it in the title, and give it in "order_principle".
 - A set or sequence of 3 items or fewer is a qa card whose Back lists them, separated by semicolons.
+- "cloze" (Anki's own cloze note): "text" holds the card, with each answer marked {{c1::...}}, and "why" is shown on the back. Use it only where qa and list fit badly:
+  - Properties of a set or a comparison, where each property should be known when asked but recalling the whole set from nothing is not the aim (a list would demand that). Write a title line saying what is described or compared, an empty line, then one line per property, "property: {{c1::answer}}" (e.g. "Fatigue: {{c1::resistant vs prone}}"). Interrelated properties share c1, so one card reveals them together; independent facts get c2, c3 and so on, a card each. "kind": "set".
+  - A fact whose Front would need a very long subquestion or a wordy question stem: one or two sentences with the fact clozed, e.g. "Aside from histamine, mast cells also synthesise {{c1::prostaglandins and leukotrienes}} [2], but this takes time". "kind": the qa kind that fits.
+  - "[n]" after a property or a cloze gives the number of answers when n > 1.
+  - Cloze sparingly: the student can learn the shape of a sentence instead of the fact. Cloze only the fact itself, never words the grammar or the rest of the text gives away. The text around each cloze must make its answer unambiguous without the document.
 
-# The prompt (Front, or a list's title)
+# The prompt (Front, a list's title, or a cloze's title line)
 - Telegraphic and short: the thing, then what is asked. Examples: "Meningitis organisms - basal skull fracture", "Nephron segment reabsorbing most filtered HCO₃⁻".
 - Name the dimension asked as a bracketed subquestion: "Sacubitril (MoA, use) [2]". Combine subquestions on one card only when their recall is largely shared. "[n]" gives the number of answers when n > 1; keep n at 3 or fewer, otherwise make a list.
 - Subquestions must be generic. Take them from the facet vocabulary below and ask the same facets of every item of the same kind (every drug gets the drug facets). A subquestion asked of only one item, such as "is it a prodrug?", becomes a cue for its own answer: use a facet that applies to all comparable items, or leave it out.
@@ -52,7 +57,7 @@ You receive the document as context and a target from it. Card only the target. 
 - Add a mnemonic only if it is genuinely memorable: in "mnemonic" for lists, at the end of the Why for qa cards.
 
 # Formatting
-- Plain text, with Unicode for symbols: HCO₃⁻, Na⁺, CO₂, ≥, →, µ. Only <b>, <i>, <sub>, <sup> and <br> are allowed in front, back and why; none in titles or list items.
+- Plain text, with Unicode for symbols: HCO₃⁻, Na⁺, CO₂, ≥, →, µ. Only <b>, <i>, <sub>, <sup> and <br> are allowed in front, back, why and a cloze's text; none in titles or list items. Separate a cloze's lines with \n.
 - UK spelling.
 
 # Facet vocabulary
@@ -63,10 +68,10 @@ The student's existing cards use these subquestion words; use them, in lower cas
 When no facet fits, a new one is allowed; add the flag "new facet: <word>" to that card.
 
 # Check before replying
-Silently check every card: one question with a short, unambiguous answer, readable without the document; every reversed card has a reverse prompt and no two reversed cards share a Back; sets and sequences of more than 3 items are lists; list items stand alone; no invented mechanism; uncertain guidance flagged. Fix any failure before replying.
+Silently check every card: one question with a short, unambiguous answer, readable without the document; every reversed card has a reverse prompt and no two reversed cards share a Back; sets and sequences of more than 3 items are lists; list items stand alone; a cloze only where qa and list fit badly, each of its answers unambiguous from the text around it; no invented mechanism; uncertain guidance flagged. Fix any failure before replying.
 
 # Output
-Reply with one JSON object and nothing else, in exactly this shape (the example has three cards):
+Reply with one JSON object and nothing else, in exactly this shape (the example has four cards):
 {EXAMPLE}
 - "cards": the cards, in the order of the source.
 - "left_out": testable content you deliberately did not card, with the reason.

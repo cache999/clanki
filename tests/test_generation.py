@@ -9,7 +9,7 @@ from clanki.validators import validate
 
 def test_the_prompt_example_parses():
     out = parse_output(json.dumps(EXAMPLE_OUTPUT))
-    assert [c.type for c in out.cards] == ["qa", "qa", "list"]
+    assert [c.type for c in out.cards] == ["qa", "qa", "list", "cloze"]
 
 
 def test_missing_optional_fields_default_and_extras_are_ignored():
