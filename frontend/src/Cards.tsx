@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Job, Note, NoteDraft } from "./api";
 import { imageFields, SHOT_TYPE } from "./figure";
 import { cardDiff } from "./jobs";
+import { submits } from "./keys";
 import { parseTags, richHtml } from "./text";
 
 export type EditTarget = { id: string; focus?: string; preset?: Partial<Note> };
@@ -174,8 +175,8 @@ export function Cards(p: Props) {
       })}
       {!p.notes.length && !p.draft && (
         <p className="empty muted">
-          No cards yet. Select text in the document and press <kbd>G</kbd> to generate cards, or <kbd>N</kbd> (card) /{" "}
-          <kbd>L</kbd> (list) to write one. <kbd>Shift+G</kbd> generates for the whole document.
+          No cards yet. Select text in the document and press <kbd>G</kbd> to generate cards, or <kbd>C</kbd> (card) /{" "}
+          <kbd>Shift+C</kbd> (list) to write one. <kbd>Shift+G</kbd> generates for the whole document.
         </p>
       )}
     </aside>
@@ -190,11 +191,14 @@ function AskBox(p: { onSubmit(instruction: string): void; onCancel(): void }) {
       <input
         autoFocus
         value={v}
-        placeholder="e.g. shorter front · split into two · add a reverse card (Enter, Esc to cancel)"
+        placeholder="e.g. shorter front · split into two · add a reverse card (Tab or Enter, Esc to cancel)"
         onChange={(e) => setV(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === "Enter" && v.trim()) p.onSubmit(v.trim());
+          if (submits(e, "line")) {
+            e.preventDefault();
+            if (v.trim()) p.onSubmit(v.trim());
+          }
           if (e.key === "Escape") p.onCancel();
         }}
       />
@@ -255,7 +259,7 @@ function Suggestion(p: { note: Note; job: Job } & Pick<Props, "onAccept" | "onDi
         </div>
       ))}
       <div className="suggest-actions">
-        <button onClick={() => p.onAccept(job)}>Accept</button> <kbd>Y</kbd>
+        <button onClick={() => p.onAccept(job)}>Accept</button> <kbd>F</kbd>
         <button onClick={() => p.onDiscard(job)}>Discard</button> <kbd>D</kbd>
       </div>
     </div>
@@ -362,7 +366,7 @@ function Editor({
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (submits(e, "multiline")) {
       e.preventDefault();
       save();
     } else if (e.key === "Escape") {
@@ -440,7 +444,7 @@ function Editor({
         <input name="tags" value={f.tags} onChange={set("tags")} />
       </label>
       <div className="editor-actions">
-        <button type="submit">Save</button> <span className="muted">Ctrl+Enter</span>
+        <button type="submit">Save</button> <span className="muted">Ctrl+S</span>
         <button type="button" onClick={onCancel}>
           Cancel
         </button>{" "}

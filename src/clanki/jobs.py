@@ -17,7 +17,7 @@ from .doctext import document_text
 from .generation import GenerationError, GenOutput, parse_output, to_notes
 from .llm import LLMError
 from .models import Job, Note
-from .prompts import build_edit_messages, build_messages, build_prompt_messages, build_transcribe_messages, load_profile
+from .prompts import build_edit_messages, build_messages, build_transcribe_messages, load_profile
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class JobRunner:
                 return self._finish(job_id, status="done", proposal=proposal, flags=out.flags, **spent)
             made = to_notes(out, doc.id, job.source_id)
             first, last = job.pages
-            pages = "your prompt" if job.mode == "prompt" else "p.%d" % first if first == last else "p.%d–%d" % (first, last)
+            pages = "p.%d" % first if first == last else "p.%d–%d" % (first, last)
             with self.store.action(doc.id, "Generate %d card%s (%s)" % (len(made), "" if len(made) == 1 else "s", pages)):
                 notes = [self.store.add_note(n) for n in made]
             self._finish(job_id, status="done", note_ids=[n.id for n in notes],
@@ -111,8 +111,6 @@ class JobRunner:
 
     def _messages(self, job: Job, title: str, pages: list[str]) -> list[dict]:
         profile = load_profile(job.profile, facet_counts=self.facet_counts())
-        if job.mode == "prompt":
-            return build_prompt_messages(profile, request=job.target)
         if job.mode != "edit":
             return build_messages(profile, title=title, pages=pages, target=job.target,
                                   target_pages=job.pages, focus=job.focus, mode=job.mode)
@@ -122,10 +120,9 @@ class JobRunner:
             source_text = src.text
         elif src:
             source_text = document_text(pages, src.page, src.page_end or src.page)
-        if src and src.kind == "prompt":  # a card from the user's own request: no document here either
-            pages = []
         return build_edit_messages(profile, title=title, pages=pages, card=json.loads(job.target),
-                                   source_text=source_text, source_pages=job.pages, instruction=job.focus)
+                                   source_text=source_text, source_pages=job.pages, instruction=job.focus,
+                                   source_kind=src.kind if src else "")
 
     def _transcribe(self, job: Job, spent: dict) -> None:
         """Read the source's image into its text."""

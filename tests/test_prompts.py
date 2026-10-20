@@ -1,7 +1,7 @@
 import json
 
 from clanki.generation import EXAMPLE_OUTPUT, parse_output
-from clanki.prompts import MAX_CONTEXT_CHARS, build_messages, load_profile
+from clanki.prompts import MAX_CONTEXT_CHARS, build_edit_messages, build_messages, load_profile
 
 PAGES = ["Rods and cones.", "Rhodopsin absorbs maximally near 498 nm.", "Bipolar cells."]
 
@@ -41,6 +41,23 @@ def test_jobs_on_one_document_share_the_document_prefix():
     doc_end = a.index("</document>") + len("</document>")
     assert a[:doc_end] == b[:doc_end]
     assert "Focus: MoA" in b and "whole section" in b
+
+
+def test_a_prompt_job_sends_the_request_after_the_same_document_prefix():
+    a = _msgs()[1]["content"]
+    b = _msgs(target="why hypoglycaemia causes decerebrate posture", focus="", mode="prompt")[1]["content"]
+    doc_end = a.index("</document>") + len("</document>")
+    assert a[:doc_end] == b[:doc_end]
+    assert "<request>\nwhy hypoglycaemia causes decerebrate posture\n</request>" in b
+    assert "<target" not in b and "Focus:" not in b and "may not cover" in b
+
+
+def test_an_edit_of_a_prompted_card_shows_the_request():
+    msgs = build_edit_messages(load_profile("medical_ukmla"), title="Vision", pages=PAGES, card={"type": "qa"},
+                               source_text="why rods saturate", source_pages=(2, 2), instruction="shorter",
+                               source_kind="prompt")
+    text = msgs[1]["content"]
+    assert "<request>\nwhy rods saturate\n</request>" in text and "<source" not in text
 
 
 def test_large_documents_send_only_pages_around_the_target():

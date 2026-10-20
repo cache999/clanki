@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const FIXTURE = new URL("../../tests/fixtures/vision_test.pdf", import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL("../../tests/fixtures/vision_test.pdf", import.meta.url));
 const ANKI = "http://127.0.0.1:18765/";
 
 /** Drag-select from the start of one text-layer line to the end of another. */
@@ -28,15 +29,17 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await expect(page.locator(".textLayer span", { hasText: "Rhodopsin" })).toBeVisible();
   await expect(page.locator(".reader-bar")).toContainText("p. 1/2");
 
-  // highlight -> Q/A card; Back is prefilled with the selection
+  // highlight -> Q/A card with C; Back is prefilled with the selection; Ctrl+S saves
   await select(page, "Rhodopsin absorbs");
   await expect(page.locator(".sel-info")).toContainText("Selected on p.1");
-  await page.keyboard.press("n");
+  await page.keyboard.press("c");
   await expect(page.locator('textarea[name="back"]')).toHaveValue("Rhodopsin absorbs maximally near 498 nm.");
   await expect(page.locator('textarea[name="front"]')).toBeFocused();
   await page.keyboard.type("Rhodopsin peak absorption (value + unit)");
+  await page.keyboard.press("Tab"); // in the editor, Tab moves between fields
+  await expect(page.locator('textarea[name="back"]')).toBeFocused();
   await page.locator('textarea[name="back"]').fill("~498 nm");
-  await page.keyboard.press("Control+Enter");
+  await page.keyboard.press("Control+s");
   const rho = card(page, "Rhodopsin peak absorption");
   await expect(rho).toContainText("p.1");
   await expect(rho.locator(".status")).toHaveText("new");
@@ -59,11 +62,11 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await expect(rho).toContainText("(r: visual pigment with this peak?)");
   await expect(rho).toContainText("Q/A ⇄");
 
-  // three selected lines -> list card, one item per line, bullets stripped
+  // three selected lines -> list card (Shift+C), one item per line, bullets stripped
   await page.keyboard.press("]");
   await expect(page.locator(".reader-bar")).toContainText("p. 2/2");
   await select(page, "Photoreceptors", "Ganglion cells");
-  await page.keyboard.press("l");
+  await page.keyboard.press("Shift+C");
   await expect(page.locator('textarea[name="items"]')).toHaveValue("Photoreceptors\nBipolar cells\nGanglion cells");
   await page.keyboard.type("Retinal cell layers (outer to inner)");
   await page.keyboard.press("Control+Enter");
@@ -75,8 +78,11 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await page.keyboard.press("Control+Enter");
   await expect(card(page, "Card without an answer")).toContainText("Back is empty");
 
-  // send
+  // S alone sends nothing; Shift+S sends
   await page.keyboard.press("s");
+  await page.waitForTimeout(300); // a send would have finished by now
+  await expect(rho.locator(".status")).toHaveText("new");
+  await page.keyboard.press("Shift+S");
   await expect(page.locator(".toast")).toContainText("2 added");
   await expect(page.locator(".toast")).toContainText("1 not sent");
   await expect(rho.locator(".status")).toHaveText("sent");
@@ -93,7 +99,7 @@ test("read, card, send, edit, export", async ({ page, request }) => {
   await page.locator('textarea[name="back"]').fill("~498 nm (blue-green)");
   await page.keyboard.press("Control+Enter");
   await expect(rho.locator(".status")).toHaveText("edited");
-  await page.keyboard.press("s");
+  await page.keyboard.press("Shift+S");
   await expect(page.locator(".toast")).toContainText("1 updated");
   inAnki = Object.values(await (await request.get(ANKI)).json()) as { fields: Record<string, string> }[];
   expect(inAnki.find((n) => n.fields.Front)!.fields.Back).toBe("~498 nm (blue-green)<br>(r: visual pigment with this peak?)");
@@ -131,6 +137,18 @@ test("document survives a reload with its highlights", async ({ page }) => {
   await expect(page.locator(".textLayer span", { hasText: "Rhodopsin" })).toBeVisible();
   await expect(page.locator(".card")).toHaveCount(3);
   await expect(page.locator(".clanki-hl .hl.has-cards").first()).toBeVisible();
+
+  // Tab and Shift+Tab move between cards; ` opens the jobs panel
+  const cards = page.locator(".card");
+  await page.keyboard.press("Tab");
+  await expect(cards.nth(0)).toHaveClass(/selected/);
+  await page.keyboard.press("Tab");
+  await expect(cards.nth(1)).toHaveClass(/selected/);
+  await page.keyboard.press("Shift+Tab");
+  await expect(cards.nth(0)).toHaveClass(/selected/);
+  await page.keyboard.press("`");
+  await expect(page.getByRole("dialog", { name: "Generation jobs" })).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 
 test("generate cards with the LLM", async ({ page }) => {
@@ -162,14 +180,15 @@ test("generate cards with the LLM", async ({ page }) => {
 
   // the first time, a notice says what is sent to a third party; Cancel sends nothing
   const notice = page.getByRole("dialog", { name: "Before using the AI features" });
-  await expect(notice).toContainText("DeepSeek");
+  await expect(notice).toContainText("third-party AI service");
+  await expect(notice).not.toContainText("DeepSeek"); // generic, whichever provider is used
   await expect(notice).toContainText("right to share");
   await notice.getByRole("button", { name: "Cancel" }).click();
   await expect(notice).toHaveCount(0);
   await expect(page.locator(".clanki-hl .hl.has-cards")).toHaveCount(greenBefore);
   await page.keyboard.press("g");
   await page.locator(".focusbox input").fill("function");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab"); // Tab submits a one-line box, like Enter
   await notice.getByRole("button", { name: "I understand, continue" }).click();
   const gen = card(page, "Generated: Cones mediate colour vision in bright");
   await expect(gen).toContainText("focus was function");
@@ -202,10 +221,49 @@ test("generate cards with the LLM", async ({ page }) => {
   await expect(listCard.locator(".issues")).toHaveCount(0);
   await expect(listCard.locator(".status")).toHaveText("new");
 
-  // model choice persists
-  await page.locator("select.model").selectOption("deepseek-v4-pro");
+  // model choices persist; only models that read images are offered for screenshots
+  await expect(page.locator("header select.image-model option")).toHaveText(["deepseek-flash"]);
+  await page.locator("header select.text-model").selectOption("deepseek-v4-pro");
   await page.reload();
-  await expect(page.locator("select.model")).toHaveValue("deepseek-v4-pro");
+  await expect(page.locator("select.text-model")).toHaveValue("deepseek-v4-pro");
+  await expect(page.locator("select.image-model")).toHaveValue("deepseek-flash");
+  await page.locator("select.text-model").selectOption("deepseek-flash");
+});
+
+test("bars in workflow order: opening and models on top, Anki and jobs below", async ({ page }) => {
+  await page.goto("/");
+  const top = page.locator("header.topbar");
+  const bottom = page.locator("footer.bottombar");
+  await expect(top.getByRole("button", { name: "Open…" })).toBeVisible();
+  await expect(top).toContainText("Profile");
+  await expect(top).toContainText("Text model");
+  await expect(top).toContainText("Image model");
+  await expect(bottom).toContainText("Deck");
+  await expect(bottom).toContainText("Tags");
+  await expect(bottom.getByRole("button", { name: /^Jobs/ })).toBeVisible();
+  await expect(bottom.getByRole("button", { name: /^Send to Anki/ })).toBeVisible();
+  await expect(bottom.getByRole("button", { name: "Export .txt" })).toBeVisible();
+  expect((await top.boundingBox())!.y).toBeLessThan((await page.locator(".reader").boundingBox())!.y);
+  expect((await bottom.boundingBox())!.y).toBeGreaterThan((await page.locator(".cards").boundingBox())!.y);
+});
+
+test("a card from a prompt, on something the document doesn't cover", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  await page.keyboard.press("]");
+  await expect(page.locator(".reader-bar")).toContainText("p. 2/2");
+  await page.keyboard.press("q");
+  const box = page.locator(".promptbox input");
+  await expect(box).toBeFocused();
+  await box.fill("why hypoglycaemia causes decerebrate posture");
+  await page.keyboard.press("Tab");
+  const made = card(page, "Prompted: why hypoglycaemia causes decerebrate posture");
+  await expect(made).toContainText("p.2 prompt");
+  await page.keyboard.press(".");
+  const job = page.getByRole("dialog", { name: "Generation jobs" }).locator(".job").first();
+  await expect(job).toContainText("“why hypoglycaemia causes decer…”");
+  await expect(job).toContainText("prompt");
+  await page.keyboard.press("Escape");
 });
 
 test("ask the AI to change a card, then accept or discard", async ({ page }) => {
@@ -226,8 +284,8 @@ test("ask the AI to change a card, then accept or discard", async ({ page }) => 
   await expect(suggestion.locator("ins")).toHaveText("Edited: shorter front");
   await expect(rho.locator(".front")).toHaveText("Rhodopsin peak absorption (value + unit)");
 
-  // Y accepts: the card changes, and since it is in Anki it is marked for update
-  await page.keyboard.press("y");
+  // F accepts: the card changes, and since it is in Anki it is marked for update
+  await page.keyboard.press("f");
   const edited = card(page, "Edited: shorter front");
   await expect(edited.locator(".suggest")).toHaveCount(0);
   await expect(edited.locator(".status")).toHaveText("edited");
@@ -284,8 +342,8 @@ test("screenshots: capture, pick one or several, read them, and drop one onto a 
   await page.goto("/");
   await page.locator(".textLayer span").first().waitFor();
 
-  // I, then drag a box: the screenshot is kept and picked, and nothing is sent yet
-  await page.keyboard.press("i");
+  // B, then drag a box: the screenshot is kept and picked, and nothing is sent yet
+  await page.keyboard.press("b");
   await expect(page.locator(".reader-bar")).toContainText("Drag a box");
   const box = (await page.locator(".page").first().boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.5);
@@ -304,7 +362,7 @@ test("screenshots: capture, pick one or several, read them, and drop one onto a 
   await expect(snippet).toHaveValue(/Median nerve: carpal tunnel/);
   await expect(snippet).toBeFocused();
   await snippet.fill("Median nerve: carpal tunnel\nUlnar nerve: Guyon's canal");
-  await page.keyboard.press("Control+Enter");
+  await page.keyboard.press("Control+s");
   await expect(page.locator(".sel-info")).toContainText("figure on p.1");
   await page.keyboard.press("g");
   await page.keyboard.press("Enter");
@@ -320,6 +378,19 @@ test("screenshots: capture, pick one or several, read them, and drop one onto a 
   }, png);
   await expect(shots).toHaveCount(2);
   await expect(page.locator(".tray .shot.picked")).toHaveCount(1);
+
+  // a full tray scrolls in its row: the reader never grows into the cards
+  await page.setViewportSize({ width: 800, height: 720 });
+  const readerBox = (await page.locator(".reader-body").boundingBox())!;
+  const cardsBox = (await page.locator(".cards").boundingBox())!;
+  expect(readerBox.x + readerBox.width).toBeLessThanOrEqual(cardsBox.x + 1);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  // Shift+T reads it and goes straight to generating, without the correcting box
+  await page.keyboard.press("Shift+T");
+  await expect(page.locator(".focusbox input")).toBeFocused();
+  await expect(page.locator(".snippet")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // Shift+click the box on the page picks both; T joins their transcripts, labelled
   await page.locator(".clanki-hl .hl.region").first().scrollIntoViewIfNeeded();
@@ -403,7 +474,7 @@ test("exported cards are marked, and Send to Anki skips them", async ({ page, re
   await expect(page.locator(".toast")).toContainText("marked exported");
   await expect(c.locator(".status")).toHaveText("exported");
 
-  await page.keyboard.press("s");
+  await page.keyboard.press("Shift+S");
   await expect(page.locator(".toast")).toContainText("already up to date");
   await expect(c.locator(".status")).toHaveText("exported");
 });
@@ -440,17 +511,4 @@ test("each document has a profile, and MathJax on cards is rendered", async ({ p
   await expect(card(page, "Transformer attention").locator(".back .katex")).toHaveCount(1);
   await page.reload();
   await expect(profile).toHaveValue("ml_papers");
-});
-
-test("cards from your own prompt, without the document", async ({ page }) => {
-  await page.goto("/");
-  await page.locator(".textLayer span").first().waitFor();
-  await page.keyboard.press("p");
-  const box = page.locator(".promptbox input");
-  await expect(box).toBeFocused();
-  await box.fill("Frank-Starling law");
-  await page.keyboard.press("Enter");
-  const made = card(page, "Prompted: Frank-Starling law");
-  await expect(made).toContainText("own");
-  await expect(page.locator(".promptbox")).toHaveCount(0);
 });

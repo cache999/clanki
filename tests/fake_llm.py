@@ -38,14 +38,6 @@ class EchoLLM:
             text = "Figure: nerve supply\nMedian nerve: carpal tunnel\nUlnar nerve: Guyon's canal\nC5 → C6 → C7"
             return LLMResult(text=text, finish_reason="stop", model=model,  # text and a full-size image's tokens
                              usage=Usage(cache_hit=0, cache_miss=2500, output=60, reasoning=30), cost_usd=0.0003)
-        request = re.search(r"<request>\n(.*?)\n</request>", user, re.S)
-        if request:  # cards from the user's own prompt
-            text = request.group(1)
-            out = {"cards": [{"type": "qa", "kind": "fact", "front": "Prompted: " + text[:40], "back": "from the model's knowledge",
-                              "why": "", "add_reverse": False, "reverse_prompt": "", "facets": [], "flags": []}],
-                   "left_out": [], "image_occlusion_candidates": [], "flags": []}
-            return LLMResult(text=json.dumps(out), finish_reason="stop", model=model,
-                             usage=Usage(cache_hit=900, cache_miss=60, output=80, reasoning=20), cost_usd=0.0001)
         card = re.search(r"<card>\n(.*?)\n</card>", user, re.S)
         if card:  # an AI edit: echo the instruction into the front; "split" makes two cards
             c = json.loads(card.group(1))
@@ -58,6 +50,13 @@ class EchoLLM:
             out = {"cards": cards, "left_out": [], "image_occlusion_candidates": [], "flags": []}
             return LLMResult(text=json.dumps(out), finish_reason="stop", model=model,
                              usage=Usage(cache_hit=1000, cache_miss=100, output=100, reasoning=20), cost_usd=0.0001)
+        request = re.search(r"<request>\n(.*?)\n</request>", user, re.S)
+        if request:  # a card from the student's prompt
+            card = {"type": "qa", "kind": "concept", "front": "Prompted: " + request.group(1), "back": "from the model",
+                    "why": "", "add_reverse": False, "reverse_prompt": "", "facets": [], "flags": []}
+            out = {"cards": [card], "left_out": [], "image_occlusion_candidates": [], "flags": []}
+            return LLMResult(text=json.dumps(out), finish_reason="stop", model=model,
+                             usage=Usage(cache_hit=1000, cache_miss=50, output=150, reasoning=40), cost_usd=0.0001)
         target = re.search(r"<target[^>]*>\n(.*?)\n</target>", user, re.S).group(1)
         focus = re.search(r"^Focus: (.*)$", user, re.M).group(1)
         lines = [l.strip("• ").strip() for l in target.splitlines() if l.strip()]

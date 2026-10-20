@@ -41,7 +41,7 @@ Browser (React + TS, PDF.js) ──HTTP────▶ FastAPI (Python, uv) ─�
 ## UI
 
 ```
-┌ [doc tabs]  p.12/40  zoom  │ Profile: Medical (UKMLA) │ Model: … │ Jobs ●2 ⚠1 │ Send ▸ Anki ┐
+┌ [doc] Open… Web page… │ Profile: Medical (UKMLA) │ Text model: … │ Image model: … │ ⚙ ? ┐
 ├───────────────────────────────────────────────┬───────────────────────────────┤
 │ READER (~65%)                                  │ CARDS (~35%)                   │
 │ PDF.js pages with selectable text              │ Filter: doc │ page │ selection │
@@ -51,8 +51,11 @@ Browser (React + TS, PDF.js) ──HTTP────▶ FastAPI (Python, uv) ─�
 │   Focus: [ MoA        ]  ⏎ generate            │ │ → Neprilysin inhibitor; HF │ │
 │ Coverage strip beside the scrollbar            │ │ Why ▸  · tags · ⚠ warnings │ │
 │                                                │ └ new │ sent ✓ │ edited ●  ───┘ │
-└────────────────────────────────────────────────┴───────────────────────────────┘
+├────────────────────────────────────────────────┴───────────────────────────────┤
+└ Deck: …  Tags: …                          │ Jobs ●2 ⚠1 │ Anki ✓ │ Send ▸ Anki │ Export ┘
 ```
+
+The bars follow the order of work: opening a document and choosing the profile and models come before reading, so they are on top; the deck, tags, jobs and delivery to Anki come after, so they are at the bottom.
 
 - Clicking a card scrolls the reader to its source highlight, and clicking a highlight filters the cards to it.
 - The jobs popover lists each job's state, elapsed time, tokens and cost, with retry and cancel. A failed job keeps its highlight marked red.
@@ -60,27 +63,29 @@ Browser (React + TS, PDF.js) ──HTTP────▶ FastAPI (Python, uv) ─�
 
 ### Keyboard shortcuts
 
-Single keys, active whenever you are not typing in a field; `?` shows the full sheet (defined in `frontend/src/keys.ts`). There is no pane focus: `N`/`L` use the current text selection if there is one. Browser-reserved combinations (e.g. Chrome's `Ctrl+Shift+A`) are avoided.
+Single keys, active whenever you are not typing in a field; `?` shows the full sheet (defined in `frontend/src/keys.ts`). There is no pane focus: `C`/`Shift+C` use the current text selection if there is one. Browser-reserved combinations (e.g. Chrome's `Ctrl+Shift+A`) are avoided.
+
+The daily keys are on the left half of a QWERTY keyboard (2026-10-19), so the right hand stays on the mouse for selecting. The earlier right-hand keys still work as aliases: `N` `L` `P` `I` `Y` `J` `K` `.`. Instead of Enter, one-line boxes (focus, prompt, AI edit, whole-document focus) also submit with `Tab` or `Ctrl+S`. The card editor and the transcript box save with `Ctrl+S` (or `Ctrl+Enter`), because `Tab` moves between their fields. `Ctrl+S` never opens the browser's Save dialog. Shift must match for named keys, so `Tab` and `Shift+Tab` differ, and Alt+Tab and Ctrl+Tab stay with Windows and the browser.
 
 | Key | Action |
 |---|---|
-| `N` / `L` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
-| `G` | Generate from the selection: opens the focus box; Enter with it empty runs unconditioned generation |
-| `P` | Cards from your own prompt: the model's knowledge, no document context |
+| `C` / `Shift+C` | New card / new list card, from the selection if any (Back prefilled; one list item per bullet or line) |
+| `G` | Generate from the selection: opens the focus box; `Tab` with it empty runs unconditioned generation |
 | `Shift+G` | Generate for the whole document, after a cost estimate |
+| `Q` | Card from a prompt: a card on something the document may not cover, written from the model's knowledge |
 | `A` | Ask the AI to change the selected card (type what to change); the suggestion shows as a diff |
-| `Y` / `D` | Accept / discard the AI's suggestion on the selected card |
-| `.` / `,` | Jobs panel / Settings |
-| `J` `K` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
-| `E` / `Enter` | Edit; `Ctrl+Enter` saves, `Esc` cancels |
+| `F` / `D` | Accept / discard the AI's suggestion on the selected card |
+| `` ` `` / `,` | Jobs panel / Settings |
+| `Tab` / `Shift+Tab` (or `↓` `↑`) | Next/previous card; the reader scrolls to its highlight |
+| `E` / `Enter` | Edit; `Ctrl+S` saves, `Esc` cancels |
 | `X` / `Z` / `Shift+Z` / `H` | Delete / undo / redo / undo history |
 | `R` | Toggle Add Reverse; turning it on opens the reverse-prompt box |
 | `[` `]`, `+` `-` `0` | Previous/next page, zoom, fit width |
-| `S` | Send new and edited cards to Anki |
+| `Shift+S` | Send new and edited cards to Anki (Shift, so a stray `S` beside `D` and `F` sends nothing) |
 | `Shift+E` | Export `.txt` |
 | `O` / `Shift+O` | Open a document / a web page by its address |
-| `I` | Screenshot a figure: drag a box around it (or paste one with `Ctrl+V`); click picks one, `Shift`+click adds more |
-| `T` / `Shift+T` | Read the picked screenshots into text (one call each, joined) / read them again; then `Ctrl+Enter` and `G`/`N`/`L` |
+| `B` | Screenshot a figure: drag a box around it (or paste one with `Ctrl+V`); click picks one, `Shift`+click adds more |
+| `T` / `Shift+T` | Read the picked screenshots into text (one call each, joined; again each time), then correct it and `Ctrl+S`, `G`/`C`/`Shift+C` / read them and go straight to the focus box, without correcting |
 
 ## Generation pipeline
 
@@ -248,11 +253,13 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
      - Dragging a thumbnail onto a card shows drop targets for its fields (`media.IMAGE_FIELDS`); dropping appends `<img src="clanki-<source id>.<ext>">`.
      - Send copies those images into Anki with `storeMediaFile`. clanki shows them via `/api/media/<name>`, and they are the only images the HTML rules allow.
      - The AI never sees image tags: they are stripped from an AI edit's card and put back into its suggestion. The export dialog says how many cards have images (an import file can't carry them; `.apkg` export is future work).
-   - Own-prompt cards (`P`), added after milestone 6:
-     - The user types a request, and a `prompt` job (`build_prompt_messages`) sends the profile's system prompt and the request, with no document.
-     - The model writes from established knowledge, flags anything uncertain, and matches the amount to the request. A live run turned "Frank-Starling law" into 8 core cards for $0.003.
-     - The request becomes a `prompt` source at the page being read. Its cards are labelled "own" and left out of coverage. AI edits of them leave the document out too.
-   - Third-party notice: before the first AI action (generate, whole document, AI edit, reading a figure or screenshot, card-this-anyway, retry), a one-time dialog says what is sent to DeepSeek. It warns against sending others' intellectual property and confidential or patient data. Accepting is stored with the data (`llm_notice_accepted_at`). The dialog, not a button, takes focus, so the Enter that triggered the action can't accept it.
+   - Third-party notice: before the first AI action (generate, whole document, AI edit, reading a figure or screenshot, card-this-anyway, retry), a one-time dialog says what is sent to a third-party AI service (generic, so it holds for any provider). It warns against sending others' intellectual property and confidential or patient data. Accepting is stored with the data (`llm_notice_accepted_at`). The dialog, not a button, takes focus, so the Enter that triggered the action can't accept it.
+
+7. **After milestone 6 (2026-10-19)**:
+   - **Reading images:** reading a screenshot uses the **image model**, a setting of its own beside the text model (`default_model`). Only `llm.IMAGE_MODELS` (deepseek-flash) may be chosen. `deepseek-v4-pro` drops an image without an error and replies that none was given. That happened whenever the text model was set to it, so the provider now refuses images for any other model. `T` always reads again; `Shift+T` reads and opens the focus box on the joined text, skipping the correcting box.
+   - **Dropped images:** deepseek-flash also sometimes drops the image (seen 2026-10-18: prompt tokens were the text's alone, and the reply was "The image is unsupported"). The transcribe prompts ask for `NO_IMAGE` when no image is seen. A reply that says so, or whose prompt tokens are too few for the image's size, is retried once and then fails, caching nothing (`jobs._missed_image`). A refusal cached by an older version is read again.
+   - **Cards from a prompt (`Q`):** a card on a request the document may not cover. The request is a `prompt` source on the page being read (no rects; left out of the coverage strip, labelled `p.n prompt`), and the job (mode `prompt`) keeps the cached document prefix but replaces the target and focus with the request. The rules tying cards to the source are lifted: the model writes from established knowledge, uses the document only for level and terms, and flags what it is unsure of. An AI edit of such a card shows the request, not a source.
+   - **Two bars** in workflow order (see UI). The reader's grid column is `minmax(0, 1fr)`: a full screenshot tray used to widen the reader into the cards.
 
 ## Import tests (milestone 0, done)
 

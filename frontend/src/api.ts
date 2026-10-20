@@ -49,7 +49,9 @@ export type Doc = {
 export type Source = {
   id: string;
   document_id: string;
-  kind: "highlight" | "chunk" | "region" | "image"; // region: a box around a figure; image: a pasted screenshot
+  // region: a box around a figure; image: a pasted screenshot; prompt: a request for a card the
+  // document may not cover (text), asked while reading page
+  kind: "highlight" | "chunk" | "region" | "image" | "prompt";
   page: number;
   page_end: number | null;
   text: string;
@@ -78,7 +80,7 @@ export type Job = {
   document_id: string;
   source_id: string | null;
   note_id: string | null;
-  mode: "highlight" | "chunk" | "edit" | "figure" | "transcribe";
+  mode: "highlight" | "chunk" | "edit" | "figure" | "transcribe" | "prompt"; // prompt: target is the request
   pages: [number, number];
   target: string;
   focus: string;
@@ -112,8 +114,12 @@ export type Estimate = {
 /** store: false where there is no credential store (WSL), so only the environment variable works. */
 export type KeyStatus = { set: boolean; source: "env" | "keyring" | null; hint: string | null; store: boolean };
 export type Settings = {
-  providers: { deepseek: { models: string[]; key: KeyStatus } };
+  /** image_models: the models that read screenshots */
+  providers: { deepseek: { models: string[]; image_models: string[]; key: KeyStatus } };
+  /** for writing and editing cards */
   default_model: string;
+  /** for reading screenshots (T) */
+  image_model: string;
   /** The subquestion vocabulary the prompt uses: the profile's, plus the student's frequent ones. */
   facets: string[];
   /** For new documents; kept with the data. */
@@ -134,6 +140,7 @@ export type Settings = {
 
 export type SettingsPatch = Partial<{
   default_model: string;
+  image_model: string;
   default_deck: string;
   default_tags: string[];
   default_profile: string;
@@ -144,13 +151,13 @@ export type SettingsPatch = Partial<{
 }>;
 
 export type GenerateBody = {
-  mode: "selection" | "document" | "prompt"; // prompt: cards on the user's own request, no document
-  prompt?: string;
-  page?: number; // the page being read, where cards from a prompt are filed
+  mode: "selection" | "document" | "prompt";
   selection?: Pick<Source, "page" | "text" | "rects">;
   source_ids?: string[]; // generate from these screenshots (cards attach to the first), with the selection's text
   focus?: string;
   model?: string;
+  prompt?: string; // mode "prompt": what the card should be about
+  page?: number; // mode "prompt": the page being read, where the card sits
 };
 
 /** One undoable change to a document's cards, newest first in the history. */

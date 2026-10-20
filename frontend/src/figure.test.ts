@@ -35,7 +35,7 @@ describe("sourceLabel", () => {
     expect(sourceLabel({ kind: "chunk", page: 3, page_end: 6 })).toBe("p.3–6");
     expect(sourceLabel({ kind: "region", page: 3, page_end: null })).toBe("p.3 figure");
     expect(sourceLabel({ kind: "image", page: 3, page_end: null })).toBe("p.3 image");
-    expect(sourceLabel({ kind: "prompt", page: 3, page_end: null })).toBe("p.3 own");
+    expect(sourceLabel({ kind: "prompt", page: 3, page_end: null })).toBe("p.3 prompt");
   });
 });
 

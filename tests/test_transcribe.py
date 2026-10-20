@@ -101,6 +101,25 @@ def test_reading_transcribes_each_selected_image_separately(client, doc, llm):
     assert "carpal tunnel" in text["text"]  # the page's own text, to spell labels right
 
 
+def test_reading_uses_a_model_that_reads_images_whatever_the_default(client, doc, llm):
+    # deepseek-v4-pro drops images silently and replies that it can't see one
+    client.put("/api/settings", json={"default_model": "deepseek-v4-pro"})
+    llm["p"] = ScriptedLLM(TRANSCRIPT, "Re-read text")
+    [job] = read(client, doc, capture(client, doc))
+    assert job["model"] == "deepseek-flash" and llm["p"].calls[0]["model"] == "deepseek-flash"
+    again = client.post("/api/jobs/%s/retry" % job["id"], json={"model": "deepseek-v4-pro"}).json()
+    assert again["model"] == "deepseek-flash" and llm["p"].calls[1]["model"] == "deepseek-flash"
+
+
+def test_reading_uses_the_image_model_setting(client, doc, llm, monkeypatch):
+    import clanki.app
+    monkeypatch.setattr(clanki.app, "IMAGE_MODELS", ("deepseek-flash", "deepseek-v4-pro"))  # as if pro read images
+    assert client.put("/api/settings", json={"image_model": "deepseek-v4-pro"}).status_code == 200
+    llm["p"] = ScriptedLLM(TRANSCRIPT)
+    [job] = read(client, doc, capture(client, doc))
+    assert job["model"] == "deepseek-v4-pro"
+
+
 def test_a_read_image_is_not_sent_again_unless_forced(client, doc, llm):
     llm["p"] = ScriptedLLM(TRANSCRIPT, "Re-read text")
     a = capture(client, doc)

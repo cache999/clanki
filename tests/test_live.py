@@ -67,6 +67,19 @@ def test_flash_transcribes_a_diagram(deepseek):
         assert s in r.text
 
 
+def test_flash_card_from_a_prompt(deepseek):
+    pages = ["Causes of metabolic coma\nHypoglycaemia, hyperglycaemia, DKA\nHypothyroid (myxoedema coma), Addison's, "
+             "hypopituitarism\nSevere uraemia\nHepatic failure (elevated ammonia)"]
+    msgs = build_messages(load_profile(), title="Coma CPC handout", pages=pages,
+                          target="why hypoglycaemia causes decerebrate posture", target_pages=(1, 1), focus="",
+                          mode="prompt")
+    r = deepseek.complete(msgs, model="deepseek-flash")
+    out = parse_output(r.text)
+    _show(r, out)
+    assert r.finish_reason == "stop" and out.cards and not out.left_out
+    assert any("decerebrat" in (getattr(c, "front", "") + getattr(c, "back", "") + c.why).lower() for c in out.cards)
+
+
 def _show(r, out):
     print("\nusage %s, cost $%.5f" % (r.usage, r.cost_usd))
     for c in out.cards:
@@ -106,12 +119,3 @@ def test_flash_general_profile(deepseek):
     out = parse_output(r.text)
     _show(r, out)
     assert out.cards and "ukmla" not in r.text.lower()
-
-
-def test_flash_cards_from_an_own_prompt(deepseek):
-    from clanki.prompts import build_prompt_messages
-    msgs = build_prompt_messages(load_profile("medical_ukmla"), request="Frank-Starling law of the heart")
-    r = deepseek.complete(msgs, model="deepseek-flash")
-    out = parse_output(r.text)
-    _show(r, out)
-    assert out.cards and not out.left_out

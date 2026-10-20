@@ -28,7 +28,7 @@ from .config import Config, save_config
 from .doctext import chunk_pages, document_text, page_texts
 from .generation import GENERATED_TAG, note_to_card, parse_cards, to_notes
 from .jobs import JobRunner, is_refusal
-from .llm import DEFAULT_MODEL, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
+from .llm import DEFAULT_MODEL, IMAGE_MODELS, PROVIDER_MODELS, DeepSeek, LLMError, Usage, cost, is_peak
 from .models import Document, Job, Note, Source
 from .prompts import DEFAULT_PROFILE, facet_vocabulary, list_profiles, load_profile
 from .store import NOTE_BOOKKEEPING, NOTE_METADATA, Store
@@ -63,15 +63,17 @@ class SourceIn(BaseModel):
 
 
 class GenerateIn(BaseModel):
-    mode: Literal["selection", "document", "prompt"]  # prompt: cards on the user's own request, no document
-    prompt: str = ""
-    page: int = 1  # the page being read, where cards from a prompt are filed
+    mode: Literal["selection", "document", "prompt"]
     selection: SourceIn | None = None
     # generate from these screenshots (cards attach to the first), with the selection's text; one
     # screenshot's text is replaced by the selection, as corrected
     source_ids: list[str] = []
     focus: str = ""
     model: str | None = None
+    # mode "prompt": a card on this request, which the document may not cover; it sits on the page
+    # being read
+    prompt: str = ""
+    page: int = 1
 
 
 class ScreenshotIn(BaseModel):
@@ -160,7 +162,8 @@ def _replacement_patch(n: Note) -> dict:
 
 class SettingsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    default_model: str | None = None
+    default_model: str | None = None  # for writing and editing cards
+    image_model: str | None = None  # for reading screenshots
     # defaults for new documents, kept with the data
     default_deck: str | None = None
     default_tags: list[str] | None = None
@@ -231,6 +234,13 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         if model not in PROVIDER_MODELS["deepseek"]:
             raise HTTPException(422, "unknown model %r" % model)
         return model
+
+    def pick_image_model(model: str | None) -> str:
+        """For reading an image: the model asked for if it reads images, else the image model setting."""
+        if model and pick_model(model) in IMAGE_MODELS:
+            return model
+        saved = store.get_setting("image_model", IMAGE_MODELS[0])
+        return saved if saved in IMAGE_MODELS else IMAGE_MODELS[0]
 
     def get_job(job_id: str) -> Job:
         j = store.get_job(job_id)
@@ -374,7 +384,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
         srcs = [get_source(doc_id, sid) for sid in body.source_ids]
         if any(s.kind not in ("region", "image") for s in srcs):
             raise HTTPException(422, "only screenshots can be transcribed")
-        model = pick_model(body.model)
+        model = pick_image_model(body.model)
         jobs = [runner.submit(Job(document_id=doc_id, source_id=s.id, mode="transcribe", profile=doc.profile,
                                   pages=(s.page, s.page), target="", model=model))
                 for s in srcs if body.force or not s.text.strip() or is_refusal(s.text)]
@@ -559,13 +569,7 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def generate(doc_id: str, body: GenerateIn):
         doc = get_doc(doc_id)
         model = pick_model(body.model)
-        if body.mode == "prompt":
-            if not body.prompt.strip():
-                raise HTTPException(422, "say what the cards should be about")
-            src = store.add_source(Source(document_id=doc.id, kind="prompt", page=body.page, text=body.prompt.strip()))
-            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode="prompt", profile=doc.profile,
-                                      pages=(body.page, body.page), target=src.text, model=model))]
-        elif body.mode == "selection":
+        if body.mode == "selection":
             sel = body.selection
             if sel is None or not sel.text.strip():
                 raise HTTPException(422, "select some text first")
@@ -578,6 +582,13 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
             jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode=mode, profile=doc.profile,
                                       pages=(src.page, src.page), target=sel.text, focus=body.focus,
                                       model=model))]
+        elif body.mode == "prompt":
+            if not body.prompt.strip():
+                raise HTTPException(422, "say what the card should be about")
+            page = min(max(body.page, 1), len(pages_for(doc.id)) or 1)
+            src = store.add_source(Source(document_id=doc.id, kind="prompt", page=page, text=body.prompt.strip()))
+            jobs = [runner.submit(Job(document_id=doc.id, source_id=src.id, mode="prompt", profile=doc.profile,
+                                      pages=(page, page), target=src.text, model=model))]
         else:
             pages = pages_for(doc.id)
             chunks = chunk_pages(pages)
@@ -637,7 +648,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(job_id: str, body: RetryIn | None = None) -> Job:
         j = get_job(job_id)
-        model = pick_model((body and body.model) or j.model)
+        pick = pick_image_model if j.mode == "transcribe" else pick_model
+        model = pick((body and body.model) or j.model)
         if j.mode == "edit":
             return submit_edit(get_note(j.note_id), j.focus, model)
         return resubmit(j, model=model)
@@ -710,9 +722,10 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
 
     # settings
     def settings():
-        return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"],
+        return {"providers": {"deepseek": {"models": PROVIDER_MODELS["deepseek"], "image_models": list(IMAGE_MODELS),
                                            "key": keystore.key_status("deepseek")}},
                 "default_model": store.get_setting("default_model", DEFAULT_MODEL),
+                "image_model": pick_image_model(None),
                 "facets": facet_vocabulary(store.get_setting("default_profile", DEFAULT_PROFILE), facet_counts()),
                 "defaults": {"deck": default_deck(), "tags": store.get_setting("default_tags", []),
                              "profile": store.get_setting("default_profile", DEFAULT_PROFILE)},
@@ -736,6 +749,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
     def put_settings(body: SettingsIn):
         if body.default_profile is not None and body.default_profile not in {x.name for x in list_profiles()}:
             raise HTTPException(422, "unknown profile %r" % body.default_profile)
+        if body.image_model is not None and pick_model(body.image_model) not in IMAGE_MODELS:
+            raise HTTPException(422, "%s cannot read images (use %s)" % (body.image_model, ", ".join(IMAGE_MODELS)))
         here = body.model_dump(include={"anki_url", "soffice", "port", "data_dir"}, exclude_none=True)
         if here and cfg.config_path is None:
             raise HTTPException(422, "clanki was started without a config file")
@@ -759,6 +774,8 @@ def create_app(cfg: Config, store: Store | None = None, anki: AnkiConnect | None
                 store.set_setting(key, getattr(body, key))
         if body.default_model is not None:
             store.set_setting("default_model", pick_model(body.default_model))
+        if body.image_model is not None:
+            store.set_setting("image_model", body.image_model)
         return {**settings(), "restart": restart}
 
     @app.post("/api/settings/llm-notice")
