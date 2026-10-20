@@ -268,10 +268,10 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
             {!sel.sourceIds ? "Selected on" : sel.sourceIds.length > 1 ? `Transcribed ${sel.sourceIds.length} screenshots, from` : "Transcribed figure on"}{" "}
             p.{sel.page}: “
             {sel.text.length > 60 ? sel.text.slice(0, 60) + "…" : sel.text}” —{" "}
-            <kbd>G</kbd> generate · <kbd>N</kbd> card · <kbd>L</kbd> list · <kbd>Esc</kbd> clear
+            <kbd>G</kbd> generate · <kbd>C</kbd> card · <kbd>Shift+C</kbd> list · <kbd>Esc</kbd> clear
           </span>
         ) : (
-          <span className="muted">Select text, then G to generate cards, or N / L to write one · Shift+G: whole document</span>
+          <span className="muted">Select text, then G to generate cards, or C / Shift+C to write one · Shift+G: whole document</span>
         )}
       </div>
       <div className="tray-slot">{props.tray}</div>

@@ -10,6 +10,7 @@ import {
   indexLine,
   JobsPanel,
   LlmNotice,
+  PromptBox,
   SettingsDialog,
   SnippetBox,
 } from "./Generate";
@@ -59,14 +60,16 @@ export function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false); // P: a card from a prompt
   const [docConfirm, setDocConfirm] = useState<Estimate | null>(null);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [askingFor, setAskingFor] = useState<string | null>(null);
-  // screenshots: drawing a box, picking some, waiting for their transcripts, then correcting the joined text
+  // screenshots: drawing a box, picking some, waiting for their transcripts, then correcting the joined
+  // text (T) or going straight to generating from it (Shift+T, direct)
   const [regionMode, setRegionMode] = useState(false);
   const [shots, setShots] = useState<string[]>([]); // picked screenshot ids, in picking order
-  const [reading, setReading] = useState<{ ids: string[]; jobIds: string[] } | null>(null);
+  const [reading, setReading] = useState<{ ids: string[]; jobIds: string[]; direct: boolean } | null>(null);
   const [snippet, setSnippet] = useState<{ sources: Source[]; text: string } | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -138,6 +141,7 @@ export function App() {
     setSendErrors({});
     setJobs([]);
     setFocusOpen(false);
+    setPromptOpen(false);
     setRegionMode(false);
     setShots([]);
     setReading(null);
@@ -192,6 +196,16 @@ export function App() {
     await reloadJobs();
   }
 
+  /** A card on something the document may not cover; it sits on the page being read. */
+  async function generatePrompt(prompt: string) {
+    if (!doc) return;
+    setPromptOpen(false);
+    const r = await guard(api.generate(doc.id, { mode: "prompt", prompt, page: reader.current?.currentPage() ?? 1 }));
+    if (!r) return;
+    say("Writing a card from your prompt…");
+    await reloadJobs();
+  }
+
   async function confirmDocument() {
     if (!doc) return;
     const e = await guard(api.estimate(doc.id));
@@ -203,7 +217,7 @@ export function App() {
     setDocConfirm(null);
     const r = await guard(api.generate(doc.id, { mode: "document", focus }));
     if (!r) return;
-    say(`Generating ${r.jobs.length} section${r.jobs.length === 1 ? "" : "s"}… (. shows progress)`);
+    say(`Generating ${r.jobs.length} section${r.jobs.length === 1 ? "" : "s"}… (\` shows progress)`);
     await reloadJobs();
   }
 
@@ -250,35 +264,42 @@ export function App() {
     say("Screenshot saved · T reads it · Shift+click others to add them");
   }
 
-  function readShots(force: boolean) {
+  /** Read the picked screenshots (again, if already read); direct skips correcting the text. */
+  function readShots(direct: boolean) {
     if (!doc) return say("Open a document first (O)");
-    if (!shots.length) return say("Pick a screenshot first: I takes one, a click picks one");
+    if (!shots.length) return say("Pick a screenshot first: B takes one, a click picks one");
     const ids = shots;
-    llm(() => void startReading(ids, force));
+    llm(() => void startReading(ids, direct));
   }
 
-  async function startReading(ids: string[], force: boolean) {
+  async function startReading(ids: string[], direct: boolean) {
     if (!doc) return;
-    const r = await guard(api.transcribe(doc.id, ids, force));
+    setSnippet(null);
+    const r = await guard(api.transcribe(doc.id, ids, true));
     if (!r) return;
-    if (r.jobs.length) say(`Reading ${r.jobs.length} image${r.jobs.length === 1 ? "" : "s"}…`);
+    say(`Reading ${r.jobs.length} image${r.jobs.length === 1 ? "" : "s"}…`);
     await reloadJobs();
-    setReading({ ids, jobIds: r.jobs.map((j) => j.id) });
+    setReading({ ids, jobIds: r.jobs.map((j) => j.id), direct });
   }
 
-  // when every picked screenshot has been read, open the joined transcript for correcting
+  // when every picked screenshot has been read: the joined transcript, for correcting or (direct)
+  // as the selection with the focus box open
   useEffect(() => {
     if (!reading || !doc) return;
     const mine = jobs.filter((j) => reading.jobIds.includes(j.id));
     if (mine.some((j) => j.status === "failed" || j.status === "cancelled")) return setReading(null);
     if (mine.length < reading.jobIds.length || mine.some((j) => j.status !== "done")) return;
-    const want = reading.ids;
+    const { ids: want, direct } = reading;
     setReading(null);
     void guard(api.sources(doc.id)).then((all) => {
       if (!all) return;
       setSources(all);
       const picked = want.map((id) => all.find((s) => s.id === id)).filter((s): s is Source => !!s?.text);
-      if (picked.length) setSnippet({ sources: picked, text: joinTranscripts(picked) });
+      if (!picked.length) return;
+      const text = joinTranscripts(picked);
+      if (!direct) return setSnippet({ sources: picked, text });
+      setSelection({ page: picked[0].page, text, rects: picked[0].rects, sourceIds: picked.map((x) => x.id) });
+      setFocusOpen(true);
     });
   }, [reading, jobs, doc]);
 
@@ -322,8 +343,8 @@ export function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  async function changeModel(model: string) {
-    const s = await guard(api.putSettings({ default_model: model }));
+  async function changeModel(patch: { default_model: string } | { image_model: string }) {
+    const s = await guard(api.putSettings(patch));
     if (s) setSettings(s);
   }
 
@@ -470,9 +491,13 @@ export function App() {
         return setFocusOpen(true);
       case "generateDocument":
         return doc ? void confirmDocument() : say("Open a document first (O)");
+      case "promptCard":
+        if (!doc) return say("Open a document first (O)");
+        setFocusOpen(false);
+        return setPromptOpen(true);
       case "readShots":
         return readShots(false);
-      case "rereadShots":
+      case "readShotsDirect":
         return readShots(true);
       case "figure":
         if (!doc) return say("Open a document first (O)");
@@ -482,7 +507,7 @@ export function App() {
       case "jobs":
         return setJobsOpen((o) => !o);
       case "aiEdit":
-        return selected ? setAskingFor(selected.id) : say("Select a card first (J/K)");
+        return selected ? setAskingFor(selected.id) : say("Select a card first (Tab)");
       case "acceptSuggestion": {
         const j = selected && edits.get(selected.id);
         return j && j.status === "done" ? void accept(j) : say("No AI suggestion on the selected card");
@@ -534,6 +559,15 @@ export function App() {
   const runRef = useRef(run);
   runRef.current = run;
 
+  // Ctrl+S saves clanki's boxes (keys.submits); it never opens the browser's Save dialog
+  useEffect(() => {
+    const noSaveDialog = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") e.preventDefault();
+    };
+    window.addEventListener("keydown", noSaveDialog, true);
+    return () => window.removeEventListener("keydown", noSaveDialog, true);
+  }, []);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !isTyping(e.target)) {
@@ -548,7 +582,7 @@ export function App() {
         return;
       }
       if (help || settingsOpen || docConfirm || exportOpen || consentFor) return;
-      const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen || askingFor !== null);
+      const c = commandFor(e, isTyping(e.target) || editing !== null || focusOpen || promptOpen || askingFor !== null);
       if (c) {
         e.preventDefault();
         runRef.current(c);
@@ -556,7 +590,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, askingFor, regionMode, historyOpen, exportOpen, consentFor, shots]);
+  }, [help, selection, editing, jobsOpen, settingsOpen, docConfirm, focusOpen, promptOpen, askingFor, regionMode, historyOpen, exportOpen, consentFor, shots]);
 
   const pending = notes.filter((n) => n.status === "new" || n.status === "edited").length;
   return (
@@ -596,70 +630,53 @@ export function App() {
             if (f) void openFile(f);
           }}
         />
+        {doc && settings && (
+          <label className="docfield" title="How cards are written for this document">
+            Profile
+            <select value={doc.profile} onChange={(e) => void updateDoc({ profile: e.target.value })}>
+              {settings.profiles.map((x) => (
+                <option key={x.name} value={x.name}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {doc && (
-          <>
-            <DocField
-              key={doc.id + "deck"}
-              label="Deck"
-              value={doc.deck}
-              placeholder="Default"
-              list="decks"
-              onCommit={(deck) => updateDoc({ deck })}
-            />
-            <DocField
-              key={doc.id + "tags"}
-              label="Tags"
-              value={doc.tags.join(" ")}
-              placeholder="NHB::vision"
-              onCommit={(t) => updateDoc({ tags: parseTags(t) })}
-            />
-            {settings && (
-              <label className="docfield" title="How cards are written for this document">
-                Profile
-                <select value={doc.profile} onChange={(e) => void updateDoc({ profile: e.target.value })}>
-                  {settings.profiles.map((x) => (
-                    <option key={x.name} value={x.name}>
-                      {x.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <button onClick={deleteDoc} title="Remove this document from clanki">
-              Remove
-            </button>
-          </>
+          <button onClick={deleteDoc} title="Remove this document from clanki">
+            Remove
+          </button>
         )}
         <span className="spacer" />
         {busy && <span className="busy">{busy}</span>}
         {settings && (
-          <select
-            className="model"
-            value={settings.default_model}
-            onChange={(e) => changeModel(e.target.value)}
-            title="Model for generation"
-          >
-            {settings.providers.deepseek.models.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
+          <>
+            <label className="docfield" title="Model for writing and editing cards (G, P, A)">
+              Text model
+              <select
+                className="model text-model"
+                value={settings.default_model}
+                onChange={(e) => void changeModel({ default_model: e.target.value })}
+              >
+                {settings.providers.deepseek.models.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            <label className="docfield" title="Model for reading screenshots (T)">
+              Image model
+              <select
+                className="model image-model"
+                value={settings.image_model}
+                onChange={(e) => void changeModel({ image_model: e.target.value })}
+              >
+                {settings.providers.deepseek.image_models.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          </>
         )}
-        <button
-          className={`jobs-btn ${summary.active ? "active" : ""} ${summary.failed ? "has-failed" : ""}`}
-          onClick={() => setJobsOpen((o) => !o)}
-          title="Generation jobs (.)"
-        >
-          Jobs{summary.active ? ` ● ${summary.active}` : ""}
-          {summary.failed ? ` ⚠ ${summary.failed}` : ""}
-          {summary.cost ? ` · ${money(summary.cost)}` : ""}
-        </button>
-        <AnkiPill status={anki} />
-        <button onClick={() => run("send")} disabled={!doc} title="Send new and edited cards to Anki (S)">
-          Send to Anki{pending ? ` (${pending})` : ""}
-        </button>
-        <button onClick={() => run("export")} disabled={!doc} title="Download an Anki import file (Shift+E)">
-          Export .txt
-        </button>
         <button onClick={() => setSettingsOpen(true)} title="Settings (,)">
           ⚙
         </button>
@@ -686,7 +703,9 @@ export function App() {
             notes={notes}
             selection={selection}
             bar={
-              focusOpen && selection ? (
+              promptOpen ? (
+                <PromptBox onSubmit={(t) => llm(() => void generatePrompt(t))} onCancel={() => setPromptOpen(false)} />
+              ) : focusOpen && selection ? (
                 <FocusBox
                   pageLabel={
                     !selection.sourceIds
@@ -770,6 +789,44 @@ export function App() {
           onDropImage={(id, field, sid) => void dropImage(id, field, sid)}
         />
       </main>
+      <footer className="bottombar">
+        {doc && (
+          <>
+            <DocField
+              key={doc.id + "deck"}
+              label="Deck"
+              value={doc.deck}
+              placeholder="Default"
+              list="decks"
+              onCommit={(deck) => updateDoc({ deck })}
+            />
+            <DocField
+              key={doc.id + "tags"}
+              label="Tags"
+              value={doc.tags.join(" ")}
+              placeholder="NHB::vision"
+              onCommit={(t) => updateDoc({ tags: parseTags(t) })}
+            />
+          </>
+        )}
+        <span className="spacer" />
+        <button
+          className={`jobs-btn ${summary.active ? "active" : ""} ${summary.failed ? "has-failed" : ""}`}
+          onClick={() => setJobsOpen((o) => !o)}
+          title="Generation jobs (`)"
+        >
+          Jobs{summary.active ? ` ● ${summary.active}` : ""}
+          {summary.failed ? ` ⚠ ${summary.failed}` : ""}
+          {summary.cost ? ` · ${money(summary.cost)}` : ""}
+        </button>
+        <AnkiPill status={anki} />
+        <button onClick={() => run("send")} disabled={!doc} title="Send new and edited cards to Anki (Shift+S)">
+          Send to Anki{pending ? ` (${pending})` : ""}
+        </button>
+        <button onClick={() => run("export")} disabled={!doc} title="Download an Anki import file (Shift+E)">
+          Export .txt
+        </button>
+      </footer>
       {jobsOpen && (
         <JobsPanel
           jobs={jobs}

@@ -57,6 +57,15 @@ def test_plain_text_replies_and_images_for_transcription():
     assert r.text == "Median nerve: carpal tunnel"
 
 
+def test_images_for_a_model_that_cannot_read_them_are_refused_before_calling():
+    p, seen = provider(lambda r: httpx.Response(200, json=deepseek_reply()))
+    msgs = [{"role": "user", "content": [{"type": "text", "text": "Transcribe"},
+                                         {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]
+    with pytest.raises(llm.LLMError, match="deepseek-v4-pro cannot read images"):
+        p.complete(msgs, model="deepseek-v4-pro", json_mode=False)
+    assert seen == []
+
+
 def test_result_carries_text_usage_and_cost():
     p, _ = provider(lambda r: httpx.Response(200, json=deepseek_reply('{"cards": [1]}')))
     off_peak = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)  # a Saturday

@@ -1,11 +1,12 @@
 // Coverage strip: how much of each page has been carded, for the strip beside the reader.
 
-type SourceLike = { id: string; page: number; page_end: number | null };
+type SourceLike = { id: string; page: number; page_end: number | null; kind?: string };
 type NoteLike = { source_id: string | null };
 export type PageCoverage = { cards: number; state: "pending" | "failed" | "carded" | "empty" };
 
 /** Per page (index 0 = page 1): the cards made from it (a chunk's cards are spread evenly over its
- * pages) and its state; running generation shows over a failure, a failure over cards. */
+ * pages) and its state; running generation shows over a failure, a failure over cards. Cards from a
+ * prompt don't count: they only sit on the page they were asked on. */
 export function pageCoverage(
   pageCount: number,
   sources: SourceLike[],
@@ -13,7 +14,7 @@ export function pageCoverage(
   sourceStatus: Map<string, "pending" | "failed">,
 ): PageCoverage[] {
   const pages = Array.from({ length: pageCount }, () => ({ cards: 0, pending: false, failed: false }));
-  const byId = new Map(sources.map((s) => [s.id, s]));
+  const byId = new Map(sources.filter((s) => s.kind !== "prompt").map((s) => [s.id, s]));
   const span = (s: SourceLike) => {
     const out = [];
     for (let p = s.page; p <= (s.page_end ?? s.page); p++) if (p >= 1 && p <= pageCount) out.push(pages[p - 1]);

@@ -14,17 +14,18 @@ import {
 } from "./api";
 import { parseTags } from "./text";
 import { jobSummary, money, pagesLabel } from "./jobs";
+import { submits } from "./keys";
 
-const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image" };
+const MODE_LABELS: Record<string, string> = { edit: "edit", figure: "figure", transcribe: "read image", prompt: "prompt" };
 
-/** The model's transcription of a figure, for correcting. Ctrl+Enter makes it the selection (then
- * G / N / L as for selected text); Esc closes. */
+/** The model's transcription of a figure, for correcting. Ctrl+S (or Ctrl+Enter) makes it the
+ * selection (then G / C / Shift+C as for selected text); Esc closes. */
 export function SnippetBox(p: { label: string; text: string; onUse(text: string): void; onCancel(): void }) {
   const [v, setV] = useState(p.text);
   return (
     <div className="snippet">
       <span>
-        {p.label}: correct it if needed, then <kbd>Ctrl+Enter</kbd> to card it · <kbd>Esc</kbd> closes
+        {p.label}: correct it if needed, then <kbd>Ctrl+S</kbd> to card it · <kbd>Esc</kbd> closes
       </span>
       <textarea
         autoFocus
@@ -33,7 +34,10 @@ export function SnippetBox(p: { label: string; text: string; onUse(text: string)
         onChange={(e) => setV(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && v.trim()) p.onUse(v.trim());
+          if (submits(e, "multiline")) {
+            e.preventDefault();
+            if (v.trim()) p.onUse(v.trim());
+          }
           if (e.key === "Escape") p.onCancel();
         }}
       />
@@ -41,7 +45,7 @@ export function SnippetBox(p: { label: string; text: string; onUse(text: string)
   );
 }
 
-/** One-line focus prompt shown in the reader bar after G. Enter generates, Esc cancels. */
+/** One-line focus prompt shown in the reader bar after G. Tab or Enter generates, Esc cancels. */
 export function FocusBox(p: { pageLabel: string; onSubmit(focus: string): void; onCancel(): void }) {
   const [v, setV] = useState("");
   return (
@@ -50,11 +54,38 @@ export function FocusBox(p: { pageLabel: string; onSubmit(focus: string): void; 
       <input
         autoFocus
         value={v}
-        placeholder="optional, e.g. MoA (Enter to generate, Esc to cancel)"
+        placeholder="optional, e.g. MoA (Tab or Enter to generate, Esc to cancel)"
         onChange={(e) => setV(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === "Enter") p.onSubmit(v);
+          if (submits(e, "line")) {
+            e.preventDefault();
+            p.onSubmit(v);
+          }
+          if (e.key === "Escape") p.onCancel();
+        }}
+      />
+    </span>
+  );
+}
+
+/** The request for a card from a prompt (Q), in the reader bar. Tab or Enter generates, Esc cancels. */
+export function PromptBox(p: { onSubmit(prompt: string): void; onCancel(): void }) {
+  const [v, setV] = useState("");
+  return (
+    <span className="focusbox promptbox">
+      Card from a prompt:
+      <input
+        autoFocus
+        value={v}
+        placeholder="e.g. why hypoglycaemia causes decerebrate posture (Tab or Enter to generate, Esc to cancel)"
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (submits(e, "line")) {
+            e.preventDefault();
+            if (v.trim()) p.onSubmit(v.trim());
+          }
           if (e.key === "Escape") p.onCancel();
         }}
       />
@@ -83,13 +114,16 @@ export function DocumentConfirm(p: { estimate: Estimate; onSubmit(focus: string)
             onChange={(ev) => setFocus(ev.target.value)}
             onKeyDown={(ev) => {
               ev.stopPropagation();
-              if (ev.key === "Enter") p.onSubmit(focus);
+              if (submits(ev, "line")) {
+                ev.preventDefault();
+                p.onSubmit(focus);
+              }
               if (ev.key === "Escape") p.onCancel();
             }}
           />
         </label>
         <div className="dialog-actions">
-          <button onClick={() => p.onSubmit(focus)}>Generate</button> <span className="muted">Enter</span>
+          <button onClick={() => p.onSubmit(focus)}>Generate</button> <span className="muted">Tab or Enter</span>
           <button onClick={p.onCancel}>Cancel</button> <span className="muted">Esc</span>
         </div>
       </div>
@@ -118,6 +152,7 @@ export function JobsPanel(p: {
     return () => clearInterval(t);
   }, []);
   const s = jobSummary(p.jobs);
+  const quote = (t: string) => `“${t.length > 30 ? t.slice(0, 30) + "…" : t}”`;
   const act = async (f: () => Promise<unknown>) => {
     try {
       await f();
@@ -134,7 +169,7 @@ export function JobsPanel(p: {
           {s.active} running · {s.failed} failed · {money(s.cost)} for this document
         </span>
         <span className="spacer" />
-        <button onClick={p.onClose} title="Close (Esc or .)">
+        <button onClick={p.onClose} title="Close (Esc or `)">
           ×
         </button>
       </div>
@@ -146,7 +181,9 @@ export function JobsPanel(p: {
             <button className="chip" onClick={() => j.source_id && p.onShowSource(j.source_id)}>
               {pagesLabel(j.pages)}
             </button>
-            {j.focus && <span className="focus">“{j.focus.length > 30 ? j.focus.slice(0, 30) + "…" : j.focus}”</span>}
+            {(j.mode === "prompt" ? j.target : j.focus) && (
+              <span className="focus">{quote(j.mode === "prompt" ? j.target : j.focus)}</span>
+            )}
             <span className="muted">{j.model.replace("deepseek-", "")}</span>
             <span className="muted">{j.status}</span>
             <span className="muted">{duration(j, now)}</span>
@@ -214,9 +251,9 @@ export function LlmNotice(p: { onAccept(): void; onCancel(): void }) {
       >
         <h2>Before using the AI features</h2>
         <p>
-          To write cards, read figures and suggest edits, clanki sends content to <b>DeepSeek</b>, a third-party AI
-          service based in China: the text of the document you are working on, the passage, figure or screenshot you
-          choose, and the card being edited.
+          To write cards, read figures and suggest edits, clanki sends content to a <b>third-party AI service</b>: the
+          text of the document you are working on, the passage, figure or screenshot you choose, and the card being
+          edited.
         </p>
         <ul>
           <li>
@@ -225,7 +262,7 @@ export function LlmNotice(p: { onAccept(): void; onCancel(): void }) {
             may forbid uploading them to outside services.
           </li>
           <li>Never send confidential, personal or patient-identifiable information.</li>
-          <li>DeepSeek handles what it receives under its own terms and privacy policy, not clanki's.</li>
+          <li>The AI service processes what it receives under its own terms and privacy policy, not clanki's.</li>
         </ul>
         <p className="muted small">This notice is shown once. Reading, writing cards yourself and sending them to Anki never leave this computer.</p>
         <div className="dialog-actions">
@@ -327,7 +364,7 @@ export function ExportDialog(p: {
         {!!count?.with_images && (
           <p className="warn">
             {count.with_images} card{count.with_images === 1 ? " has" : "s have"} images: an import file can't carry them, so
-            they won't show in Anki. Send to Anki (S) includes them.
+            they won't show in Anki. Send to Anki (Shift+S) includes them.
           </p>
         )}
         {error && <p className="bad">{error}</p>}
@@ -539,16 +576,34 @@ export function SettingsDialog(p: {
           Keys are kept in Windows Credential Manager (never in clanki's files). An environment variable takes
           precedence.
         </p>
-        <h3>Model for generation</h3>
-        <select
-          value={p.settings.default_model}
-          onChange={(e) => run(() => api.putSettings({ default_model: e.target.value }), "Model saved")}
-        >
-          {ds.models.map((m) => (
-            <option key={m}>{m}</option>
-          ))}
-        </select>
-        <p className="muted small">deepseek-flash is cheapest; deepseek-v4-pro is stronger and about 4× the price.</p>
+        <h3>Models</h3>
+        <div className="row">
+          <label>
+            Text model (writing and editing cards)
+            <select
+              value={p.settings.default_model}
+              onChange={(e) => run(() => api.putSettings({ default_model: e.target.value }), "Text model saved")}
+            >
+              {ds.models.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Image model (reading screenshots)
+            <select
+              value={p.settings.image_model}
+              onChange={(e) => run(() => api.putSettings({ image_model: e.target.value }), "Image model saved")}
+            >
+              {ds.image_models.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="muted small">
+          deepseek-flash is cheapest; deepseek-v4-pro is stronger and about 4× the price, but can't read images.
+        </p>
         <Defaults settings={p.settings} onSave={(patch) => run(() => api.putSettings(patch), "Defaults saved")} />
         <Machine
           settings={p.settings}

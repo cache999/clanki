@@ -69,11 +69,12 @@ class Document(BaseModel):
 class Source(BaseModel):
     """What cards were made from: a highlighted passage, a page range for whole-document
     generation, a box dragged around a figure ("region") or a pasted screenshot ("image"); for
-    the last two, text is the model's transcription of the image. `rects` are [x, y, w, h] as
-    fractions of the page box, so they survive zoom changes."""
+    those two, text is the model's transcription of the image. Or the student's request for a card
+    the document may not cover ("prompt": text is the request, page the one being read, no rects).
+    `rects` are [x, y, w, h] as fractions of the page box, so they survive zoom changes."""
     id: str | None = None
     document_id: str
-    kind: Literal["highlight", "chunk", "region", "image"] = "highlight"
+    kind: Literal["highlight", "chunk", "region", "image", "prompt"] = "highlight"
     page: int
     page_end: int | None = None
     text: str
@@ -82,15 +83,15 @@ class Source(BaseModel):
 
 
 class Job(BaseModel):
-    """One request to the LLM and what came of it: new cards from a highlight, a chunk or a
-    transcribed figure; a suggested revision of one card (mode "edit": focus holds the
+    """One request to the LLM and what came of it: new cards from a highlight, a chunk, a
+    transcribed figure or a request of the student's ("prompt": target holds it); a suggested revision of one card (mode "edit": focus holds the
     instruction, target the card as JSON, and the suggestion waits in proposal until accepted or
     discarded); or the transcription of a region or image into its source's text ("transcribe")."""
     id: str | None = None
     document_id: str
     source_id: str | None = None
     note_id: str | None = None
-    mode: Literal["highlight", "chunk", "edit", "figure", "transcribe"]
+    mode: Literal["highlight", "chunk", "edit", "figure", "transcribe", "prompt"]
     pages: tuple[int, int]
     target: str
     focus: str = ""

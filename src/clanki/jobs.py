@@ -116,7 +116,8 @@ class JobRunner:
         elif src:
             source_text = document_text(pages, src.page, src.page_end or src.page)
         return build_edit_messages(profile, title=title, pages=pages, card=json.loads(job.target),
-                                   source_text=source_text, source_pages=job.pages, instruction=job.focus)
+                                   source_text=source_text, source_pages=job.pages, instruction=job.focus,
+                                   source_kind=src.kind if src else "")
 
     def _transcribe(self, job: Job, spent: dict) -> None:
         """Read the source's image into its text."""

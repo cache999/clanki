@@ -71,9 +71,26 @@ def _document(title: str, pages: list[str], target_pages: tuple[int, int]) -> li
             document_text(pages, first, last), "</document>", ""]
 
 
+PROMPT_TASK = (
+    "This time there is no target. While reading the document, the student asked for a card on the "
+    "request below, which the document may not cover. Write the card the request asks for (several only "
+    "if it asks for several things), whatever its relevance to the usual scope. Follow every rule in the "
+    "system prompt except those that tie cards to the target or the source: here the content comes from "
+    "established knowledge, and the document is context only (the student's level, terms and "
+    "conventions). Card only what you are sure of, and flag on the card anything you are unsure of. "
+    'Leave "left_out" and "image_occlusion_candidates" empty.'
+)
+
+
 def build_messages(profile: Profile, *, title: str, pages: list[str], target: str,
                    target_pages: tuple[int, int], focus: str, mode: str) -> list[dict]:
-    """System prompt, then one user message: the document first, then the target and focus."""
+    """System prompt, then one user message: the document first, then the target and focus (or,
+    for mode "prompt", the student's request: target holds it)."""
+    if mode == "prompt":
+        user = "\n".join(_document(title, pages, target_pages) + [
+            PROMPT_TASK, "<request>", target.strip(), "</request>", "",
+            "Reply with the JSON object described in the system prompt."])
+        return [{"role": "system", "content": profile.system}, {"role": "user", "content": user}]
     what = {"chunk": "The target is a whole section of the document: card all of it.",
             "figure": "The target was transcribed from a figure, diagram or image the student selected "
                       "(labels as \"label: what it points to\", links as \"A → B\"): card what it shows."
@@ -93,8 +110,9 @@ def build_messages(profile: Profile, *, title: str, pages: list[str], target: st
 
 
 def build_edit_messages(profile: Profile, *, title: str, pages: list[str], card: dict, source_text: str,
-                        source_pages: tuple[int, int], instruction: str) -> list[dict]:
-    """Revise one card following the student's instruction, with the same cached prefix."""
+                        source_pages: tuple[int, int], instruction: str, source_kind: str = "") -> list[dict]:
+    """Revise one card following the student's instruction, with the same cached prefix. A card
+    written from a request (source_kind "prompt") shows the request instead of a source."""
     parts = _document(title, pages, source_pages) + [
         "The student wants to change an existing card. Revise it following their instruction and the "
         "rules in the system prompt. Change only what the instruction asks for, plus anything that breaks "
@@ -104,7 +122,10 @@ def build_edit_messages(profile: Profile, *, title: str, pages: list[str], card:
         json.dumps(card, ensure_ascii=False, indent=1),
         "</card>",
     ]
-    if source_text.strip():
+    if source_text.strip() and source_kind == "prompt":
+        parts += ["The card was written from established knowledge, not the document, for this request of "
+                  "the student's:", "<request>", source_text.strip(), "</request>"]
+    elif source_text.strip():
         parts += ['<source pages="%s">' % _pages_attr(*source_pages), source_text.strip(), "</source>"]
     parts += ["", "Instruction: " + instruction.strip(), "",
               'Reply with the JSON object described in the system prompt; leave "left_out" and '

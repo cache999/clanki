@@ -67,12 +67,15 @@ kbd {
 .app { display: flex; flex-direction: column; height: 100vh; }
 /* Only the document text and form fields are selectable, so a drag that overshoots the page
    does not pick up UI text. */
-.topbar, .reader-bar, .cards { user-select: none; }
+.topbar, .bottombar, .reader-bar, .cards { user-select: none; }
 .cards .editor, input, textarea { user-select: text; }
-.topbar {
+/* in workflow order: opening a document and choosing models above, Anki and jobs below */
+.topbar, .bottombar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--panel);
+  padding: 4px 8px; background: var(--panel);
 }
+.topbar { border-bottom: 1px solid var(--border); }
+.bottombar { border-top: 1px solid var(--border); }
 .topbar select { max-width: 280px; }
 .brand { margin-right: 4px; }
 .spacer { flex: 1; }
@@ -84,9 +87,10 @@ kbd {
 .pill.warn { color: var(--warn); }
 .pill.bad { color: var(--bad); }
 
-.main { display: grid; grid-template-columns: 1fr minmax(380px, 36%); min-height: 0; flex: 1; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 36%); min-height: 0; flex: 1; }
 
-.reader { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; min-width: 0; }
+/* minmax(0, 1fr): a full screenshot tray scrolls in its row instead of widening the reader into the cards */
+.reader { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; min-height: 0; min-width: 0; }
 .reader.welcome { display: flex; align-items: center; justify-content: center; background: var(--reader-bg); }
 .reader-bar {
   display: flex; gap: 12px; align-items: center; padding: 3px 8px;
@@ -155,7 +159,7 @@ kbd {
 .editor-actions { display: flex; align-items: center; gap: 6px; }
 
 .toast {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+  position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 10;
   background: var(--text); color: var(--bg); padding: 6px 14px; border-radius: 6px; max-width: 80vw;
 }
 .toast.error { background: var(--bad); color: #fff; }
@@ -184,7 +188,7 @@ kbd {
 .jobs-btn.has-failed { color: var(--bad); }
 .banner { padding: 4px 10px; background: var(--sel); border-bottom: 1px solid var(--border); }
 .jobs-panel {
-  position: fixed; top: 40px; right: 8px; z-index: 15; width: min(560px, 90vw); max-height: 75vh; overflow: auto;
+  position: fixed; bottom: 44px; right: 8px; z-index: 15; width: min(560px, 90vw); max-height: 75vh; overflow: auto;
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
 }
 .jobs-head { position: sticky; top: 0; display: flex; gap: 8px; align-items: baseline; padding: 6px 10px;

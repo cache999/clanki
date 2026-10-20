@@ -29,7 +29,7 @@ precedence (that is how WSL development works: see below).
 
 ## Settings
 
-Settings (`,`) covers the API key, model, defaults for new documents, and this computer's settings:
+Settings (`,`) covers the API key, the models, defaults for new documents, and this computer's settings:
 the Anki address, LibreOffice path, port and data folder. The last group is saved to
 `config.toml` in `%APPDATA%\clanki` (`~/.local/share/clanki` in WSL), which you can also edit by
 hand (documents and cards live in that folder too):
@@ -44,20 +44,33 @@ default_deck = "Default"
 
 ## Using it
 
-Press `?` in the app for all shortcuts. The main loop:
+Press `?` in the app for all shortcuts. The daily ones are on the left of the keyboard, so your
+right hand can stay on the mouse for selecting (the older right-hand keys `N` `L` `P` `I` `Y` `J`
+`K` `.` still work). The boxes you type into submit with `Tab` as well as Enter, and the card
+editor and transcript box save with `Ctrl+S`.
+
+The bars follow the order you work in: the top one opens documents and sets the profile and models
+(Text model writes and edits cards; Image model reads screenshots, and only lists models that can),
+the bottom one has the deck, tags, jobs, and Send and Export. The main loop:
 
 - Select text and press `G` to generate cards from it. Type a focus such as `MoA` to get only
-  that, or press Enter for everything UKMLA-relevant. `Shift+G` generates for the whole document
-  after showing the estimated cost. `.` shows the jobs: progress, cost, errors, and what was left
+  that, or press `Tab` for everything UKMLA-relevant. `Shift+G` generates for the whole document
+  after showing the estimated cost. `` ` `` shows the jobs: progress, cost, errors, and what was left
   out under the UKMLA scope (with "Card this" to card it anyway).
+- `Q` makes a card from a prompt, for something the document doesn't cover: type
+  `why hypoglycaemia causes decerebrate posture` and press `Tab`. The model writes it from its own
+  knowledge (the document only sets the level and terms) and flags what it's unsure of. The card
+  sits on the page you were reading, labelled `p.n prompt`.
 - Screenshots of figures, labelled diagrams or tables:
-  - Press `I` and drag a box around one, or paste a screenshot with `Ctrl+V`. It's saved to the
+  - Press `B` and drag a box around one, or paste a screenshot with `Ctrl+V`. It's saved to the
     tray under the reader bar and picked (filled in). Nothing is sent yet.
   - Click a box or thumbnail to pick it, and `Shift`+click to add others.
-  - `T` reads the picked ones with deepseek-flash, about $0.0002 each: labels come out as
-    `label: what it points to`, arrows as `A → B`. Several are read separately and joined, each
-    headed `[Image n, p.x]`. A screenshot already read isn't sent again; `Shift+T` re-reads it.
-  - Correct the text, press `Ctrl+Enter`, then `G` / `N` / `L` as for selected text.
+  - `T` reads the picked ones with the image model (deepseek-flash, about $0.0002 each): labels
+    come out as `label: what it points to`, arrows as `A → B`. Several are read separately and
+    joined, each headed `[Image n, p.x]`. Pressing `T` again reads them again.
+  - Correct the text, press `Ctrl+S`, then `G` / `C` / `Shift+C` as for selected text.
+  - `Shift+T` reads them and goes straight to the focus box, without correcting: for plain text
+    that needs no checking.
   - Drag a thumbnail onto a card to add the image to the field you drop it on (Front, Back, Why;
     a list's Remarks or Sources). Send to Anki copies the image into Anki; export files can't carry
     images.
@@ -65,17 +78,17 @@ Press `?` in the app for all shortcuts. The main loop:
 - `Shift+O` (or Web page…) opens a web page by its address: its article and figures become a
   document like any other. Sites that block apps (e.g. Geeky Medics) or need a login can't be
   fetched; save the page from the browser instead (`Ctrl+P`, Save as PDF) and open that.
-- Or select text and press `N` for a card (Back is prefilled) or `L` for a list card
-  (one item per bullet or line). `Ctrl+Enter` saves.
-- `J`/`K` move between cards, `E` edits, `R` toggles the reverse card and asks for the reverse
-  prompt (sent as `Back<br>(r: prompt)`), `X` deletes, `Z` undoes.
+- Or select text and press `C` for a card (Back is prefilled) or `Shift+C` for a list card
+  (one item per bullet or line). `Tab` moves between fields; `Ctrl+S` saves.
+- `Tab`/`Shift+Tab` move between cards, `E` edits, `R` toggles the reverse card and asks for the
+  reverse prompt (sent as `Back<br>(r: prompt)`), `X` deletes, `Z` undoes.
 - `A` asks the AI to change the selected card: type what to change (`shorter front`,
-  `split into two`, `make it a list`) and press Enter. The suggestion appears under the card as a
-  diff; `Y` accepts it, `D` discards it. The card stays as it was until you accept.
-- `S` sends new and edited cards to Anki (edited cards are updated in place). Cards with errors
-  stay in clanki until fixed.
+  `split into two`, `make it a list`) and press `Tab`. The suggestion appears under the card as a
+  diff; `F` accepts it, `D` discards it. The card stays as it was until you accept.
+- `Shift+S` sends new and edited cards to Anki (edited cards are updated in place). It needs Shift
+  so a stray `S` beside `D` and `F` sends nothing. Cards with errors stay in clanki until fixed.
 - `Shift+E` exports an import file. Choose new and edited or all cards, Q/A and/or lists, a tag,
-  and this document or all of them. Exported cards are marked `exported` so `S` skips them. Import
+  and this document or all of them. Exported cards are marked `exported` so `Shift+S` skips them. Import
   the file in Anki with File ▸ Import. To update an exported card after editing it, export it again:
   the re-import updates it in Anki.
 - `Z` undoes any change to the cards (edits, deletes, generated batches, accepted AI edits) and
@@ -129,7 +142,7 @@ Windows; they are uploaded to clanki.
 - **Sending to Anki** needs WSL's mirrored networking, where `127.0.0.1` is shared with Windows:
   add `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run
   `wsl --shutdown` in PowerShell (it applies to all of WSL). Under the default NAT networking,
-  clanki can't reach Anki and `S` reports it unavailable; export instead (`Shift+E`, then
+  clanki can't reach Anki and `Shift+S` reports it unavailable; export instead (`Shift+E`, then
   File ▸ Import in Anki; re-importing updates cards rather than duplicating them).
 - **A sandbox that costs nothing**: `uv run python tests/e2e_server.py` runs the whole app at
   http://localhost:18710/ with a fake LLM, a fake Anki and a throwaway data folder, alongside the

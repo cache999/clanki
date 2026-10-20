@@ -127,6 +127,15 @@ def test_settings_show_models_key_status_and_default(client):
     assert client.put("/api/settings", json={"default_model": "nope"}).status_code == 422
 
 
+def test_the_image_model_is_a_setting_of_its_own_and_must_read_images(client):
+    s = client.get("/api/settings").json()
+    assert s["image_model"] == "deepseek-flash" and s["providers"]["deepseek"]["image_models"] == ["deepseek-flash"]
+    r = client.put("/api/settings", json={"image_model": "deepseek-v4-pro"})
+    assert r.status_code == 422 and "cannot read images" in r.json()["detail"]
+    s = client.put("/api/settings", json={"default_model": "deepseek-v4-pro", "image_model": "deepseek-flash"}).json()
+    assert (s["default_model"], s["image_model"]) == ("deepseek-v4-pro", "deepseek-flash")
+
+
 def test_default_model_is_used_when_none_is_given(client, doc):
     client.put("/api/settings", json={"default_model": "deepseek-v4-pro"})
     [job] = generate(client, doc, mode="selection", selection=SEL)

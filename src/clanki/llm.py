@@ -14,6 +14,9 @@ DEEPSEEK_PRICES = {
 }
 PROVIDER_MODELS = {"deepseek": list(DEEPSEEK_PRICES)}
 DEFAULT_MODEL = "deepseek-flash"
+# The models that read images (api-docs.deepseek.com/guides/vision). The others drop an image
+# without an error and reply that none was given.
+IMAGE_MODELS = ("deepseek-flash",)
 # Mon-Fri, UTC. DeepSeek also treats Chinese public holidays as off-peak; ignoring them only
 # overstates the cost on those days.
 PEAK_HOURS_UTC = ((1, 4), (6, 10))
@@ -79,6 +82,9 @@ class DeepSeek:
         ({"type": "image_url", ...}); deepseek-flash reads them (at most ~1300×1300 px each)."""
         if model not in DEEPSEEK_PRICES:
             raise LLMError("unknown model %r (choose from %s)" % (model, ", ".join(DEEPSEEK_PRICES)))
+        if model not in IMAGE_MODELS and any(isinstance(m["content"], list) and
+                                             any(p.get("type") == "image_url" for p in m["content"]) for m in messages):
+            raise LLMError("%s cannot read images (use %s)" % (model, ", ".join(IMAGE_MODELS)))
         fmt = {"response_format": {"type": "json_object"}} if json_mode else {}
         r = self._call(lambda: self.client.chat.completions.create(
             model=model, messages=messages, max_tokens=max_tokens, **fmt,

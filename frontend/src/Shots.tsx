@@ -1,5 +1,6 @@
 // Screenshot tray: the document's saved screenshots (dragged boxes and pasted images). Click picks one,
-// Shift+click adds or removes; T reads the picked ones; a thumbnail can be dragged onto a card's field.
+// Shift+click adds or removes; T reads the picked ones (Shift+T: straight to generating); a thumbnail
+// can be dragged onto a card's field.
 import type { Source } from "./api";
 import { SHOT_TYPE } from "./figure";
 
@@ -42,7 +43,7 @@ export function ShotTray(p: {
         </div>
       ))}
       <span className="muted tray-hint">
-        <kbd>T</kbd> read picked · <kbd>Shift+T</kbd> read again · drag onto a card
+        <kbd>T</kbd> read picked · <kbd>Shift+T</kbd> read and generate · drag onto a card
       </span>
     </div>
   );
