@@ -546,3 +546,31 @@ test("cloze cards: V makes one, Ctrl+Shift+C clozes, Send uses Anki's Cloze note
     { Text: "{{c1::Rhodopsin}} absorbs maximally near {{c1::498 nm}}.", Extra: "Rods dominate scotopic vision." },
   ]);
 });
+
+test("Shift+B takes a screenshot and reads it; the focus box opens at once, and cards follow the read", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".textLayer span").first().waitFor();
+  await page.keyboard.press("Shift+B");
+  await expect(page.locator(".reader-bar")).toContainText("read it");
+  const box = (await page.locator(".page").first().boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.45, { steps: 6 });
+  await page.mouse.up();
+
+  // the focus box is open while the screenshot is still being read
+  const focus = page.locator(".focusbox input");
+  await expect(focus).toBeFocused();
+  await expect(page.locator(".focusbox")).toContainText("being read");
+  await focus.fill("nerves");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".toast")).toContainText("once it's read");
+  await expect(page.locator(".focusbox")).toHaveCount(0);
+
+  // when it has been read, the cards are written from its text with that focus
+  const made = page.locator(".card", { hasText: "focus was nerves" });
+  await expect(made).toHaveCount(1);
+  await expect(made).toContainText("Generated: Figure: nerve supply");
+  await expect(made).toContainText("p.1 figure");
+  await expect(page.locator(".snippet")).toHaveCount(0);
+});

@@ -1,6 +1,7 @@
 """Stand-in LLM providers for tests and for tests/e2e_server.py."""
 import json
 import re
+import time
 
 from clanki.llm import LLMError, LLMResult, Usage
 
@@ -30,11 +31,16 @@ class ScriptedLLM:
 
 
 class EchoLLM:
-    """Deterministic cards from the target text, so the UI can be driven end to end."""
+    """Deterministic cards from the target text, so the UI can be driven end to end. read_delay:
+    seconds an image takes to read, so the UI can be used while it reads."""
+
+    def __init__(self, read_delay: float = 0):
+        self.read_delay = read_delay
 
     def complete(self, messages, *, model, **kw):
         user = messages[-1]["content"]
         if isinstance(user, list):  # an image to transcribe
+            time.sleep(self.read_delay)
             text = "Figure: nerve supply\nMedian nerve: carpal tunnel\nUlnar nerve: Guyon's canal\nC5 → C6 → C7"
             return LLMResult(text=text, finish_reason="stop", model=model,  # text and a full-size image's tokens
                              usage=Usage(cache_hit=0, cache_miss=2500, output=60, reasoning=30), cost_usd=0.0003)

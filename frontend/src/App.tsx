@@ -65,11 +65,15 @@ export function App() {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [askingFor, setAskingFor] = useState<string | null>(null);
-  // screenshots: drawing a box, picking some, waiting for their transcripts, then correcting the joined
-  // text (T) or going straight to generating from it (Shift+T, direct)
-  const [regionMode, setRegionMode] = useState(false);
+  // screenshots: drawing a box (B keeps it, Shift+B also reads it), picking some, waiting for their
+  // transcripts, then correcting the joined text (T) or going straight to generating from it (Shift+T
+  // and Shift+B, direct: the focus box opens while they read, and a focus given before they are read
+  // waits in `focus`)
+  const [regionMode, setRegionMode] = useState<false | "save" | "read">(false);
   const [shots, setShots] = useState<string[]>([]); // picked screenshot ids, in picking order
-  const [reading, setReading] = useState<{ ids: string[]; jobIds: string[]; direct: boolean } | null>(null);
+  const [reading, setReading] = useState<{ ids: string[]; jobIds: string[]; direct: boolean; focus?: string } | null>(
+    null,
+  );
   const [snippet, setSnippet] = useState<{ sources: Source[]; text: string } | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -179,14 +183,14 @@ export function App() {
     await refresh(docId);
   }
 
-  async function generateSelection(focus: string) {
-    if (!doc || !selection) return;
+  async function generateSelection(focus: string, sel = selection) {
+    if (!doc || !sel) return;
     setFocusOpen(false);
     const r = await guard(
       api.generate(doc.id, {
         mode: "selection",
-        selection: { page: selection.page, text: selection.text, rects: selection.rects },
-        source_ids: selection.sourceIds,
+        selection: { page: sel.page, text: sel.text, rects: sel.rects },
+        source_ids: sel.sourceIds,
         focus,
       }),
     );
@@ -194,6 +198,15 @@ export function App() {
     setSelection(null);
     reader.current?.clearSelection();
     await reloadJobs();
+  }
+
+  /** The focus box's Enter: generate, or, while screenshots are still being read (Shift+T, Shift+B),
+   * keep the focus until they are. */
+  function submitFocus(focus: string) {
+    if (selection || !reading?.direct) return llm(() => void generateSelection(focus));
+    setFocusOpen(false);
+    setReading({ ...reading, focus });
+    say(`Cards will be written once ${reading.ids.length > 1 ? "they're" : "it's"} read`);
   }
 
   /** A card on something the document may not cover; it sits on the page being read. */
@@ -253,14 +266,15 @@ export function App() {
     action?.();
   }
 
-  /** Keep a screenshot (nothing is sent yet) and pick it alone. */
-  async function saveShot(page: number, rect: number[] | null, image: string) {
+  /** Keep a screenshot and pick it alone; with read (Shift+B), read it as Shift+T does, else nothing is sent yet. */
+  async function saveShot(page: number, rect: number[] | null, image: string, read = false) {
     if (!doc) return say("Open a document first (O)");
     const s = await guard(api.addScreenshot(doc.id, { page, rect, image }));
     if (!s) return;
     setShots([s.id]);
     setSelection(null);
     await refresh(doc.id);
+    if (read) return llm(() => void startReading([s.id], true));
     say("Screenshot saved · T reads it · Shift+click others to add them");
   }
 
@@ -275,21 +289,30 @@ export function App() {
   async function startReading(ids: string[], direct: boolean) {
     if (!doc) return;
     setSnippet(null);
+    if (direct) {
+      setSelection(null); // the focus box is for the screenshots now
+      reader.current?.clearSelection();
+    }
     const r = await guard(api.transcribe(doc.id, ids, true));
     if (!r) return;
+    setReading({ ids, jobIds: r.jobs.map((j) => j.id), direct });
+    if (direct) setFocusOpen(true); // type a focus while they read
     say(`Reading ${r.jobs.length} image${r.jobs.length === 1 ? "" : "s"}…`);
     await reloadJobs();
-    setReading({ ids, jobIds: r.jobs.map((j) => j.id), direct });
   }
 
   // when every picked screenshot has been read: the joined transcript, for correcting or (direct)
-  // as the selection with the focus box open
+  // as the selection, generated from at once if a focus was given while reading, else with the
+  // focus box still open
   useEffect(() => {
     if (!reading || !doc) return;
     const mine = jobs.filter((j) => reading.jobIds.includes(j.id));
-    if (mine.some((j) => j.status === "failed" || j.status === "cancelled")) return setReading(null);
+    if (mine.some((j) => j.status === "failed" || j.status === "cancelled")) {
+      if (reading.direct && !selection) setFocusOpen(false); // nothing to generate from (the job says why)
+      return setReading(null);
+    }
     if (mine.length < reading.jobIds.length || mine.some((j) => j.status !== "done")) return;
-    const { ids: want, direct } = reading;
+    const { ids: want, direct, focus } = reading;
     setReading(null);
     void guard(api.sources(doc.id)).then((all) => {
       if (!all) return;
@@ -298,7 +321,9 @@ export function App() {
       if (!picked.length) return;
       const text = joinTranscripts(picked);
       if (!direct) return setSnippet({ sources: picked, text });
-      setSelection({ page: picked[0].page, text, rects: picked[0].rects, sourceIds: picked.map((x) => x.id) });
+      const sel = { page: picked[0].page, text, rects: picked[0].rects, sourceIds: picked.map((x) => x.id) };
+      if (focus !== undefined) return void generateSelection(focus, sel);
+      setSelection(sel);
       setFocusOpen(true);
     });
   }, [reading, jobs, doc]);
@@ -333,8 +358,10 @@ export function App() {
     const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
     if (!file) return;
     e.preventDefault();
+    const read = regionMode === "read"; // pasted instead of dragged after Shift+B
+    if (regionMode) setRegionMode(false);
     const fr = new FileReader();
-    fr.onload = () => void saveShot(reader.current?.currentPage() ?? 1, null, String(fr.result));
+    fr.onload = () => void saveShot(reader.current?.currentPage() ?? 1, null, String(fr.result), read);
     fr.readAsDataURL(file);
   };
   useEffect(() => {
@@ -503,10 +530,11 @@ export function App() {
       case "readShotsDirect":
         return readShots(true);
       case "figure":
+      case "figureRead":
         if (!doc) return say("Open a document first (O)");
         setSelection(null);
         reader.current?.clearSelection();
-        return setRegionMode(true);
+        return setRegionMode(c === "figureRead" ? "read" : "save");
       case "jobs":
         return setJobsOpen((o) => !o);
       case "aiEdit":
@@ -708,17 +736,24 @@ export function App() {
             bar={
               promptOpen ? (
                 <PromptBox onSubmit={(t) => llm(() => void generatePrompt(t))} onCancel={() => setPromptOpen(false)} />
-              ) : focusOpen && selection ? (
+              ) : focusOpen && (selection || reading?.direct) ? (
                 <FocusBox
                   pageLabel={
-                    !selection.sourceIds
-                      ? `p.${selection.page}`
-                      : selection.sourceIds.length > 1
-                        ? `${selection.sourceIds.length} screenshots`
-                        : `the figure on p.${selection.page}`
+                    !selection
+                      ? reading!.ids.length > 1
+                        ? `${reading!.ids.length} screenshots (being read)`
+                        : "the screenshot being read"
+                      : !selection.sourceIds
+                        ? `p.${selection.page}`
+                        : selection.sourceIds.length > 1
+                          ? `${selection.sourceIds.length} screenshots`
+                          : `the figure on p.${selection.page}`
                   }
-                  onSubmit={(f) => llm(() => void generateSelection(f))}
-                  onCancel={() => setFocusOpen(false)}
+                  onSubmit={submitFocus}
+                  onCancel={() => {
+                    setFocusOpen(false);
+                    if (!selection) setReading(null); // Esc while reading: no cards afterwards
+                  }}
                 />
               ) : snippet ? (
                 <SnippetBox
@@ -737,7 +772,7 @@ export function App() {
             regionMode={regionMode}
             onRegion={(r: Region) => {
               setRegionMode(false);
-              void saveShot(r.page, r.rect, r.image);
+              void saveShot(r.page, r.rect, r.image, regionMode === "read");
             }}
             selectedShots={pickedSet}
             tray={

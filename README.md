@@ -70,8 +70,11 @@ the bottom one has the deck, tags, jobs, and Send and Export. The main loop:
     come out as `label: what it points to`, arrows as `A → B`. Several are read separately and
     joined, each headed `[Image n, p.x]`. Pressing `T` again reads them again.
   - Correct the text, press `Ctrl+S`, then `G` / `C` / `Shift+C` as for selected text.
-  - `Shift+T` reads them and goes straight to the focus box, without correcting: for plain text
-    that needs no checking.
+  - `Shift+T` reads them and goes straight to generating, without correcting: for plain text
+    that needs no checking. The focus box opens at once; type a focus (or nothing) and press
+    `Tab` while they're still being read, and the cards are written as soon as the text is in.
+    `Esc` cancels.
+  - `Shift+B` does both: drag a box (or paste) and it's read at once, as with `Shift+T`.
   - Drag a thumbnail onto a card to add the image to the field you drop it on (Front, Back, Why;
     a list's Remarks or Sources). Send to Anki copies the image into Anki; export files can't carry
     images.

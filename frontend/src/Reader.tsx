@@ -47,7 +47,7 @@ type Props = {
   /** Replaces the selection hint in the reader bar (e.g. the generation focus box). */
   bar?: React.ReactNode;
   /** Dragging draws a box around a figure instead of selecting text. */
-  regionMode: boolean;
+  regionMode: false | "save" | "read"; // dragging a box keeps a screenshot (B) or also reads it (Shift+B)
   onRegion(r: Region): void;
   onSelection(sel: ReaderSelection | null): void;
   onSourceClick(sourceId: string, shift: boolean): void;
@@ -262,7 +262,11 @@ export const Reader = forwardRef<ReaderHandle, Props>(function Reader(props, ref
         {props.bar ? (
           props.bar
         ) : props.regionMode ? (
-          <span className="sel-info">Drag a box around a figure or its labels to transcribe it · Esc cancels</span>
+          <span className="sel-info">
+            {props.regionMode === "read"
+              ? "Drag a box around a figure or its labels to read it and card it · Esc cancels"
+              : "Drag a box around a figure or its labels to keep it · Esc cancels"}
+          </span>
         ) : sel ? (
           <span className="sel-info">
             {!sel.sourceIds ? "Selected on" : sel.sourceIds.length > 1 ? `Transcribed ${sel.sourceIds.length} screenshots, from` : "Transcribed figure on"}{" "}

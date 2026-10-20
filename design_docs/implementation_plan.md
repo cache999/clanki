@@ -87,7 +87,8 @@ The daily keys are on the left half of a QWERTY keyboard (2026-10-19), so the ri
 | `Shift+E` | Export `.txt` |
 | `O` / `Shift+O` | Open a document / a web page by its address |
 | `B` | Screenshot a figure: drag a box around it (or paste one with `Ctrl+V`); click picks one, `Shift`+click adds more |
-| `T` / `Shift+T` | Read the picked screenshots into text (one call each, joined; again each time), then correct it and `Ctrl+S`, `G`/`C`/`Shift+C` / read them and go straight to the focus box, without correcting |
+| `Shift+B` | Screenshot a figure and read it at once, as `Shift+T` |
+| `T` / `Shift+T` | Read the picked screenshots into text (one call each, joined; again each time), then correct it and `Ctrl+S`, `G`/`C`/`Shift+C` / read them and generate without correcting: the focus box opens at once, and a focus given before they're read waits for the text |
 
 ## Generation pipeline
 
@@ -269,6 +270,8 @@ The `guid` is generated when a card is created. It makes `.txt` re-imports updat
    - `V` makes one; `Ctrl+Shift+C` / `Ctrl+Shift+Alt+C` cloze the selection as in Anki. The card shows `Cloze · n` (the cards Anki makes) and marks each answer with its number.
    - The medical prompt uses cloze only where a qa or list fits badly, in the student's two cases: properties of a set or comparison that should each be known when asked, without recalling the whole set from nothing (a title line, an empty line, `property: {{c1::answer}}` lines; interrelated properties share c1); and facts whose Front would need a long subquestion or wordy stem. It warns that cloze invites learning the sentence instead of the fact. A focus can name the type (`cloze`). The general and ml_papers prompts don't write clozes yet.
    - Live check (deepseek-flash, $0.003): a slow vs fast-fatiguable motor unit passage became one cloze in that layout (c1–c3 grouping related properties) plus one qa card; the phototransduction passage gave qa cards and a process list, no cloze.
+
+9. **Screenshots without waiting (2026-10-20)**: `Shift+B` takes a screenshot and reads it at once, as before the screenshot cache. `Shift+B` and `Shift+T` open the focus box as soon as reading starts. A focus submitted before the transcripts are in waits with the reading (`reading.focus` in `App.tsx`), and the cards are generated when the last one is read. `Esc` in that box drops it; a failed read closes it, and the job says why. Frontend only: generation still gets the joined transcript as the selection, as before.
 
 ## Import tests (milestone 0, done)
 

@@ -10,6 +10,7 @@ export type Command =
   | "generateDocument"
   | "promptCard"
   | "figure"
+  | "figureRead"
   | "readShots"
   | "readShotsDirect"
   | "aiEdit"
@@ -46,8 +47,9 @@ export const SHORTCUTS: Shortcut[] = [
   { command: "generateDocument", keys: ["Shift+g"], help: "Generate cards for the whole document (shows the cost first)", group: "Generate" },
   { command: "promptCard", keys: ["q", "p"], help: "Card from a prompt: say what you want a card on, even if the document doesn't cover it (e.g. why hypoglycaemia causes decerebrate posture)", group: "Generate" },
   { command: "figure", keys: ["b", "i"], help: "Screenshot a figure: drag a box around it (or paste one with Ctrl+V); click to pick, Shift+click to add", group: "Generate" },
+  { command: "figureRead", keys: ["Shift+b"], help: "Screenshot a figure and read it at once, as Shift+T: the focus box opens while it reads", group: "Generate" },
   { command: "readShots", keys: ["t"], help: "Read the picked screenshots into text (one call each, joined; again if already read), correct it, then G / C / Shift+C", group: "Generate" },
-  { command: "readShotsDirect", keys: ["Shift+t"], help: "Read the picked screenshots and go straight to generating from the text, without correcting it", group: "Generate" },
+  { command: "readShotsDirect", keys: ["Shift+t"], help: "Read the picked screenshots and generate from the text without correcting it: the focus box opens while they read", group: "Generate" },
   { command: "aiEdit", keys: ["a"], help: "Ask the AI to change the selected card (say what to change)", group: "Generate" },
   { command: "acceptSuggestion", keys: ["f", "y"], help: "Accept the AI's suggestion for the selected card", group: "Generate" },
   { command: "discardSuggestion", keys: ["d"], help: "Discard the AI's suggestion", group: "Generate" },

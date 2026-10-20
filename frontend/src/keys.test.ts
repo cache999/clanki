@@ -9,6 +9,8 @@ const k = (key: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | 
 describe("commandFor", () => {
   it("maps single letters", () => {
     expect(commandFor(k("v"), false)).toBe("newCloze");
+    expect(commandFor(k("b"), false)).toBe("figure");
+    expect(commandFor(k("B", { shiftKey: true }), false)).toBe("figureRead");
     expect(commandFor(k("n"), false)).toBe("newCard");
     expect(commandFor(k("l"), false)).toBe("newList");
     expect(commandFor(k("e"), false)).toBe("edit");

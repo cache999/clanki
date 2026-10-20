@@ -84,7 +84,7 @@ def main():
     if not args.real_llm:
         os.environ.pop("DEEPSEEK_API_KEY", None)  # never spend money in tests
         keyring.set_keyring(MemoryKeyring())
-        provider_for = EchoLLM
+        provider_for = lambda: EchoLLM(read_delay=0.8)  # time to type a focus while an image reads
     data = Path(tempfile.mkdtemp(prefix="clanki-e2e-"))
     cfg = Config(data_dir=data, port=args.port, anki_url="http://127.0.0.1:%d" % args.anki_port)
     print("clanki e2e: http://127.0.0.1:%d/  data=%s" % (args.port, data), flush=True)
