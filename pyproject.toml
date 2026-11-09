@@ -12,6 +12,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "openai>=3.33.0",
     "pypdf>=6.21.1",
+    "cryptography>=3.1",  # pypdf needs it to open AES-encrypted PDFs; on Linux it only came via keyring
     "keyring>=25.7.0",
     "readability-lxml>=0.9",
     "fpdf2>=2.8.9",

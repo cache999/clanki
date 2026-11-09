@@ -39,3 +39,15 @@ def test_a_single_huge_page_is_its_own_chunk():
 def test_context_window_clamps_to_document():
     assert doctext.context_window(10, page=1, radius=2) == (1, 3)
     assert doctext.context_window(10, page=9, radius=2) == (7, 10)
+
+
+def test_page_texts_reads_aes_encrypted_pdf(tmp_path):
+    # handouts often carry an owner password (no copy/print) with AES; pypdf needs `cryptography` for it
+    import io
+    from pypdf import PdfReader, PdfWriter
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(make_pdf([["Rhodopsin 498 nm"]]))))
+    w.encrypt(user_password="", owner_password="owner", algorithm="AES-128")
+    pdf = tmp_path / "enc.pdf"
+    with pdf.open("wb") as f:
+        w.write(f)
+    assert doctext.page_texts(pdf) == ["Rhodopsin 498 nm"]
