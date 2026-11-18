@@ -13,3 +13,5 @@ samples/
 *.db-wal
 *.db-shm
 .claude/settings.local.json*
+# personal Anki notes: kept locally, not published
+design_docs/selected_notes*.txt

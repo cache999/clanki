@@ -12,6 +12,13 @@ All milestones are built (3, the prompt-quality loop, was skipped). clanki has:
 - undo history, a settings page, and three prompt profiles: medical, general knowledge, and ML
   papers with MathJax.
 
+## AI usage
+
+This repository was vibe-coded: almost all of the code, tests and docs were written by an AI
+coding assistant (Claude Code), with a human directing the work and trying the results. It has
+not had a careful line-by-line human review, so read the code before you trust it with
+anything important.
+
 ## Set up a Windows PC
 
 1. Install [uv](https://docs.astral.sh/uv/) and [Git](https://git-scm.com/download/win).
